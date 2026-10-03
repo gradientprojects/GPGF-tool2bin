@@ -51,6 +51,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # Pages is unavailable on this private repo (free plan); becomes active
+    # when the repo goes public. Until then a deploy failure must not redden CI.
+    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
