@@ -1,0 +1,23 @@
+{
+  "name": "gpgf-tool2bin",
+  "version": "0.0.1",
+  "description": "Browser tool: photo of a tool on a printed template becomes a Gridfinity bin exported as a STEP file. Fully client-side.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@techstark/opencv-js": "^4.11.0-release.1",
+    "comlink": "^4.4.2",
+    "replicad": "^0.23.1",
+    "replicad-opencascadejs": "^0.23.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "vite": "^6.3.5"
+  }
+}
