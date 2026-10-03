@@ -38,22 +38,56 @@ function detectAruco(c, imageData) {
   return { supported: true, ids: out.sort((a, b) => a - b) };
 }
 
-self.onmessage = async (e) => {
+import { detectAndWarp } from "./warp.js";
+
+let lastWarp = null; // Mat kept worker-side for the later pipeline stages
+
+function preview(c, mat, maxW = 560) {
+  const s = Math.min(1, maxW / mat.cols);
+  const small = new c.Mat();
+  c.resize(mat, small, new c.Size(Math.round(mat.cols * s), Math.round(mat.rows * s)),
+    0, 0, c.INTER_AREA);
+  const id = new ImageData(new Uint8ClampedArray(small.data), small.cols, small.rows);
+  small.delete();
+  return id;
+}
+
+async function selftest(imageData) {
+  const c = await cvReady();
+  const caps = {};
+  for (const k of WANT) caps[k] = typeof c[k] !== "undefined";
+  let aruco = { supported: false, ids: [] };
+  let error = null;
   try {
-    const c = await cvReady();
-    const caps = {};
-    for (const k of WANT) caps[k] = typeof c[k] !== "undefined";
-    let aruco = { supported: false, ids: [] };
-    let error = null;
-    try {
-      if (caps.aruco_ArucoDetector) aruco = detectAruco(c, e.data.imageData);
-    } catch (err) {
-      error = String(err && err.message ? err.message : err);
-    }
-    const build = c.getBuildInformation()
-      .split("\n").find((l) => l.includes("Version control")) || "";
-    self.postMessage({ ok: true, caps, aruco, error, build: build.trim() });
+    if (caps.aruco_ArucoDetector) aruco = detectAruco(c, imageData);
   } catch (err) {
-    self.postMessage({ ok: false, error: String(err) });
+    error = String(err && err.message ? err.message : err);
+  }
+  const build = c.getBuildInformation()
+    .split("\n").find((l) => l.includes("Version control")) || "";
+  return { ok: true, caps, aruco, error, build: build.trim() };
+}
+
+async function warp({ imageData, paper = "letter", pxmm = 20 }) {
+  const c = await cvReady();
+  const logs = [];
+  const t0 = performance.now();
+  const r = detectAndWarp(c, imageData, paper, pxmm, (l) => logs.push(l));
+  if (lastWarp) lastWarp.delete();
+  lastWarp = r.warp;
+  const { warp: _drop, ...meta } = r;
+  const img = preview(c, lastWarp);
+  return { ok: true, ...meta, logs, ms: Math.round(performance.now() - t0),
+    warpSize: [lastWarp.cols, lastWarp.rows], preview: img };
+}
+
+self.onmessage = async (e) => {
+  const { type = "selftest", reqId } = e.data;
+  try {
+    const result = type === "warp" ? await warp(e.data) : await selftest(e.data.imageData);
+    const transfer = result.preview ? [result.preview.data.buffer] : [];
+    self.postMessage({ reqId, ...result }, transfer);
+  } catch (err) {
+    self.postMessage({ reqId, ok: false, error: String(err && err.stack || err) });
   }
 };

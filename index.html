@@ -12,6 +12,19 @@
     <p class="tag">Photo of a tool &rarr; Gridfinity bin STEP. Everything runs in
       your browser &mdash; photos never leave your device.</p>
 
+    <section id="scan">
+      <h2>Scan a tool</h2>
+      <label class="filebtn">
+        <input type="file" id="photo" accept="image/*" capture="environment">
+        &#128247; Take / choose a photo
+      </label>
+      <p class="hint">Tool on the printed template (best) or on plain
+        letter paper. On a phone this opens the camera. Or drag a photo
+        anywhere on the page.</p>
+      <div id="scan-status" class="hint"></div>
+      <canvas id="warp-preview" style="display:none"></canvas>
+    </section>
+
     <section id="checks">
       <h2>Engine self-test</h2>
       <div class="check" id="check-cad"><span class="dot"></span>
