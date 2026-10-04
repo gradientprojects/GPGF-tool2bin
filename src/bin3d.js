@@ -509,8 +509,20 @@ export function writeStepText(oc, shape, { name = null, design = null } = {}) {
   const bytes = oc.FS.readFile("/" + filename);
   oc.FS.unlink("/" + filename);
   let text = new TextDecoder().decode(bytes);
+  if (name) text = nameBodies(text, name);
   if (design !== null) text = embedDesign(text, design);
   return text;
+}
+
+/** OCCT only names the PRODUCT (which Bambu reads); Onshape takes part
+ *  names from the SOLID/representation entities, which OCCT leaves ''.
+ *  Commercial CAD fills those — so we do too, textually. */
+export function nameBodies(text, name) {
+  const esc = name.replace(/'/g, "''");
+  return text
+    .replace(/MANIFOLD_SOLID_BREP\('',/g, `MANIFOLD_SOLID_BREP('${esc}',`)
+    .replace(/ADVANCED_BREP_SHAPE_REPRESENTATION\('',/g,
+      `ADVANCED_BREP_SHAPE_REPRESENTATION('${esc}',`);
 }
 
 /** solid.embed_design: S2S| comment chunks just inside DATA; */
