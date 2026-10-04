@@ -39,8 +39,12 @@ function detectAruco(c, imageData) {
 }
 
 import { detectAndWarp } from "./warp.js";
+import { segment } from "./segment.js";
+import { findPose, rotateContour, toOrientedMm } from "./pose.js";
 
 let lastWarp = null; // Mat kept worker-side for the later pipeline stages
+let lastField = null;
+let lastPxmm = 20;
 
 function preview(c, mat, maxW = 560) {
   const s = Math.min(1, maxW / mat.cols);
@@ -75,16 +79,53 @@ async function warp({ imageData, paper = "letter", pxmm = 20 }) {
   const r = detectAndWarp(c, imageData, paper, pxmm, (l) => logs.push(l));
   if (lastWarp) lastWarp.delete();
   lastWarp = r.warp;
+  lastField = r.field || null;
+  lastPxmm = r.pxmm;
   const { warp: _drop, ...meta } = r;
   const img = preview(c, lastWarp);
   return { ok: true, ...meta, logs, ms: Math.round(performance.now() - t0),
     warpSize: [lastWarp.cols, lastWarp.rows], preview: img };
 }
 
+// Stages 2+3 (segmentation + pose) on the last warp, or on an injected
+// warp canvas (imageData + field) — the latter is how the parity suite
+// gates this port on input identical to the reference's.
+async function contour({ imageData = null, field, pxmm }) {
+  const c = await cvReady();
+  const logs = [];
+  const log = (l) => logs.push(l);
+  const t0 = performance.now();
+  let src = lastWarp, fld = lastField, px = lastPxmm;
+  const own = imageData != null;
+  if (own) {
+    src = c.matFromImageData(imageData);
+    fld = field || null;
+    px = pxmm || 20;
+  } else if (!src) {
+    throw new Error("no warp available; run warp first");
+  }
+  const seg = segment(c, src, fld, px, log);
+  const pose = findPose(c, seg.mask, log);
+  const rot = rotateContour(seg.contourPx, pose.angle, pose.center, src.cols);
+  const { cMm, flipped, centerMm } = toOrientedMm(rot, px, log);
+  seg.mask.delete();
+  if (own) src.delete();
+  return { ok: true, contourMm: cMm, contourPx: seg.contourPx,
+    angleDeg: pose.angle, iou: pose.iou, centerPx: pose.center,
+    areaMm2: seg.areaMm2, flipped, centerMm, logs,
+    ms: Math.round(performance.now() - t0) };
+}
+
+const HANDLERS = {
+  selftest: (d) => selftest(d.imageData),
+  warp: (d) => warp(d),
+  contour: (d) => contour(d),
+};
+
 self.onmessage = async (e) => {
   const { type = "selftest", reqId } = e.data;
   try {
-    const result = type === "warp" ? await warp(e.data) : await selftest(e.data.imageData);
+    const result = await HANDLERS[type](e.data);
     const transfer = result.preview ? [result.preview.data.buffer] : [];
     self.postMessage({ reqId, ...result }, transfer);
   } catch (err) {

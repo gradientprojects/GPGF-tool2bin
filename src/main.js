@@ -3,6 +3,7 @@ import { wrap } from "comlink";
 // results Playwright asserts on
 window.__selftest = { cad: null, cv: null };
 window.__warp = null;
+window.__contour = null;
 
 function setCheck(id, ok, text) {
   const el = document.getElementById(id);
@@ -96,11 +97,26 @@ async function cvCheck() {
 const scanStatus = document.getElementById("scan-status");
 const previewCnv = document.getElementById("warp-preview");
 
+function drawContourOverlay(contourPx, warpSize) {
+  const ctx = previewCnv.getContext("2d");
+  const s = previewCnv.width / warpSize[0];
+  ctx.strokeStyle = "#ff4d8d";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  contourPx.forEach(([x, y], i) => {
+    if (i === 0) ctx.moveTo(x * s, y * s); else ctx.lineTo(x * s, y * s);
+  });
+  ctx.closePath();
+  ctx.stroke();
+}
+
 async function scanPhoto(file) {
   if (!file || !file.type.startsWith("image/")) {
     scanStatus.textContent = "that is not an image file"; return;
   }
   scanStatus.textContent = "reading photo…";
+  window.__warp = null;
+  window.__contour = null;
   try {
     const imageData = await fileToImageData(file);
     scanStatus.textContent =
@@ -113,16 +129,37 @@ async function scanPhoto(file) {
     previewCnv.width = r.preview.width; previewCnv.height = r.preview.height;
     ctx.putImageData(r.preview, 0, 0);
     previewCnv.style.display = "block";
-    scanStatus.textContent = r.mode === "template"
+    const warpLine = r.mode === "template"
       ? `template '${r.page}': ${r.nMarkers} markers, ` +
         `${r.inliers}/${r.total} corner inliers (${(r.ms / 1000).toFixed(1)}s)`
       : `plain paper ${r.pageMm[0]}×${r.pageMm[1]} mm, ` +
         `skew ${(r.skew * 100).toFixed(1)}% (${(r.ms / 1000).toFixed(1)}s)`;
+    scanStatus.textContent = warpLine + " — segmenting…";
+    const r2 = await cvRequest({ type: "contour" }, [], 600000);
+    if (!r2.ok) throw new Error(r2.error);
+    window.__contour = r2;
+    drawContourOverlay(r2.contourPx, r.warpSize);
+    const bb = r2.contourMm.reduce((m, [x, y]) => [
+      Math.min(m[0], x), Math.min(m[1], y), Math.max(m[2], x), Math.max(m[3], y),
+    ], [Infinity, Infinity, -Infinity, -Infinity]);
+    scanStatus.textContent = warpLine +
+      ` — tool ${(bb[2] - bb[0]).toFixed(1)}×${(bb[3] - bb[1]).toFixed(1)} mm, ` +
+      `${r2.areaMm2.toFixed(0)} mm², symmetry IoU ${r2.iou.toFixed(3)} ` +
+      `(${(r2.ms / 1000).toFixed(1)}s)`;
   } catch (e) {
-    window.__warp = { ok: false, error: String(e) };
+    if (!window.__warp) window.__warp = { ok: false, error: String(e) };
+    window.__contour = { ok: false, error: String(e) };
     scanStatus.textContent = "error: " + e.message;
   }
 }
+
+// parity-suite hook: run stages 2+3 on an injected warp canvas (a
+// losslessly-dumped reference warp), bypassing stage 1 entirely.
+window.__segmentWarp = async (blob, field) => {
+  const imageData = await fileToImageData(blob);
+  return cvRequest({ type: "contour", imageData, field },
+    [imageData.data.buffer], 600000);
+};
 
 document.getElementById("photo").addEventListener("change",
   (e) => scanPhoto(e.target.files[0]));
