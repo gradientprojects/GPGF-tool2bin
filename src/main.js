@@ -4,6 +4,7 @@ import { wrap } from "comlink";
 window.__selftest = { cad: null, cv: null };
 window.__warp = null;
 window.__contour = null;
+window.__profile = null;
 
 function setCheck(id, ok, text) {
   const el = document.getElementById(id);
@@ -146,12 +147,79 @@ async function scanPhoto(file) {
       ` — tool ${(bb[2] - bb[0]).toFixed(1)}×${(bb[3] - bb[1]).toFixed(1)} mm, ` +
       `${r2.areaMm2.toFixed(0)} mm², symmetry IoU ${r2.iou.toFixed(3)} ` +
       `(${(r2.ms / 1000).toFixed(1)}s)`;
+    await runProfile();
   } catch (e) {
     if (!window.__warp) window.__warp = { ok: false, error: String(e) };
     window.__contour = { ok: false, error: String(e) };
     scanStatus.textContent = "error: " + e.message;
   }
 }
+
+// ---- pocket profile (stages 4-5) -------------------------------------------
+const profileSec = document.getElementById("pocket");
+const profileStatus = document.getElementById("profile-status");
+const profileCnv = document.getElementById("profile-view");
+const optMax = document.getElementById("opt-max-contour");
+const optStrict = document.getElementById("opt-strict");
+
+function drawProfile(toolMm, r) {
+  const ctx = profileCnv.getContext("2d");
+  const Wc = profileCnv.width, Hc = profileCnv.height;
+  ctx.clearRect(0, 0, Wc, Hc);
+  const all = [...toolMm, ...r.pocketPts];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of all) {
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+  }
+  const s = Math.min(Wc / (x1 - x0 + 10), Hc / (y1 - y0 + 10));
+  const tx = (x) => (x - (x0 + x1) / 2) * s + Wc / 2;
+  const ty = (y) => Hc / 2 - (y - (y0 + y1) / 2) * s; // +Y up
+  const poly = (pts, stroke, fill) => {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => {
+      if (i === 0) ctx.moveTo(tx(x), ty(y)); else ctx.lineTo(tx(x), ty(y));
+    });
+    ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+  };
+  poly(r.pocketPts, "#ff7a30", "rgba(255,122,48,0.12)");
+  poly(toolMm, "#9aa7b5", "rgba(154,167,181,0.25)");
+  for (const [sx, sy] of r.scallops) {
+    ctx.beginPath();
+    ctx.arc(tx(sx), ty(sy), 4, 0, Math.PI * 2);
+    ctx.fillStyle = "#4da3ff"; ctx.fill();
+  }
+}
+
+async function runProfile() {
+  const cres = window.__contour;
+  if (!cres || !cres.ok) return;
+  profileSec.style.display = "block";
+  profileStatus.textContent = "fitting pocket profile…";
+  try {
+    const params = {
+      max_contour: optMax.checked,
+      strict_contain: optStrict.checked,
+    };
+    const r = await cvRequest({ type: "profile", params }, [], 600000);
+    if (!r.ok) throw new Error(r.error);
+    window.__profile = r;
+    drawProfile(cres.contourMm, r);
+    const L = r.layout;
+    profileStatus.textContent =
+      `bin ${L.nx}×${L.ny}×${L.nz}u (${(L.nx * 42 - 0.5).toFixed(1)}×` +
+      `${(L.ny * 42 - 0.5).toFixed(1)}×${L.H} mm), pocket depth ${L.depth} mm` +
+      (r.warnings.length ? ` — ⚠ ${r.warnings.join("; ")}` : "") +
+      ` (${(r.ms / 1000).toFixed(1)}s)`;
+  } catch (e) {
+    window.__profile = { ok: false, error: String(e) };
+    profileStatus.textContent = "error: " + e.message;
+  }
+}
+optMax.addEventListener("change", runProfile);
+optStrict.addEventListener("change", runProfile);
 
 // parity-suite hook: run stages 2+3 on an injected warp canvas (a
 // losslessly-dumped reference warp), bypassing stage 1 entirely.
@@ -160,6 +228,9 @@ window.__segmentWarp = async (blob, field) => {
   return cvRequest({ type: "contour", imageData, field },
     [imageData.data.buffer], 600000);
 };
+// parity hook for stages 4-5 on an injected oriented contour
+window.__profileRun = (contourMm, params) =>
+  cvRequest({ type: "profile", contourMm, params }, [], 600000);
 
 document.getElementById("photo").addEventListener("change",
   (e) => scanPhoto(e.target.files[0]));

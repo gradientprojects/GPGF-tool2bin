@@ -41,6 +41,10 @@ function detectAruco(c, imageData) {
 import { detectAndWarp } from "./warp.js";
 import { segment } from "./segment.js";
 import { findPose, rotateContour, toOrientedMm } from "./pose.js";
+import { profileResponse } from "./profilestage.js";
+
+let lastContourMm = null; // oriented mm contour from the contour stage
+let lastProfile = null;
 
 let lastWarp = null; // Mat kept worker-side for the later pipeline stages
 let lastField = null;
@@ -108,6 +112,7 @@ async function contour({ imageData = null, field, pxmm }) {
   const pose = findPose(c, seg.mask, log);
   const rot = rotateContour(seg.contourPx, pose.angle, pose.center, src.cols);
   const { cMm, flipped, centerMm } = toOrientedMm(rot, px, log);
+  lastContourMm = cMm;
   seg.mask.delete();
   if (own) src.delete();
   return { ok: true, contourMm: cMm, contourPx: seg.contourPx,
@@ -116,10 +121,26 @@ async function contour({ imageData = null, field, pxmm }) {
     ms: Math.round(performance.now() - t0) };
 }
 
+// Stages 4-5: pocket profile from the oriented contour (last computed,
+// or injected for parity), at the given UI params.
+async function profile({ contourMm = null, params = {} }) {
+  const c = await cvReady();
+  const logs = [];
+  const t0 = performance.now();
+  const src = contourMm || lastContourMm;
+  if (!src) throw new Error("no contour available; run contour first");
+  const r = profileResponse(c, src, params, (l) => logs.push(l));
+  lastProfile = r; // segs/tcks stay worker-side for the C5 solid build
+  return { ok: true, fit: r.fit, pocketPts: r.pocketPts, layout: r.layout,
+    center: r.center, scallops: r.scallops, warnings: r.warnings,
+    periodic: r.periodic, logs, ms: Math.round(performance.now() - t0) };
+}
+
 const HANDLERS = {
   selftest: (d) => selftest(d.imageData),
   warp: (d) => warp(d),
   contour: (d) => contour(d),
+  profile: (d) => profile(d),
 };
 
 self.onmessage = async (e) => {

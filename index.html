@@ -25,6 +25,19 @@
       <canvas id="warp-preview" style="display:none"></canvas>
     </section>
 
+    <section id="pocket" style="display:none">
+      <h2>Pocket profile</h2>
+      <div class="hint">
+        <label><input type="checkbox" id="opt-max-contour"> max contour
+          (don't follow notches inward)</label>
+        &nbsp;&nbsp;
+        <label><input type="checkbox" id="opt-strict" checked> guarantee
+          clearance everywhere</label>
+      </div>
+      <div id="profile-status" class="hint"></div>
+      <canvas id="profile-view" width="560" height="420"></canvas>
+    </section>
+
     <section id="checks">
       <h2>Engine self-test</h2>
       <div class="check" id="check-cad"><span class="dot"></span>
