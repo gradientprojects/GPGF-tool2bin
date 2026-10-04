@@ -4,7 +4,11 @@
 //  - straight edges are degree-1 B-splines (GC_MakeSegment not bound)
 //  - the magnet chamfer cone is a revolved trapezoid, giving the same
 //    analytic conical face as the reference (BRepPrimAPI_MakeCone not
-//    bound; a circle-pair loft writes B-spline bands that break importers)
+//    bound). A circle-pair ThruSections loft also yields a cone surface,
+//    but with B-spline seam/section edges that Bambu and Onshape fail to
+//    sew — while passing EVERY OCCT-side check (validity, tolerances,
+//    watertight mesh, bare-face re-sew). Bisect-verified 2026-10-04;
+//    only a foreign-importer drag test catches this class of bug.
 // `oc` is the ready opencascade instance throughout.
 import { periodicFit } from "./smoothprof.js";
 
@@ -266,9 +270,10 @@ function cylinder(oc, cx, cy, z0, r, h) {
 }
 
 /** magnet chamfer cone (r0 at z0 -> r1 at z0+h): a trapezoid revolved about
- *  the axis, so the lateral face is a true conical surface. A loft of two
- *  circle wires writes B-spline bands instead, which Onshape/Bambu fail to
- *  sew (the reference uses BRepPrimAPI_MakeCone, absent from this wasm). */
+ *  the axis (the reference uses BRepPrimAPI_MakeCone, absent from this
+ *  wasm). DO NOT replace with a circle-pair loft: it makes the same cone
+ *  surface but with B-spline seam/section edges that Onshape and Bambu
+ *  fail to sew, despite passing every OCCT-side check. */
 function cone(oc, cx, cy, z0, r0, r1, h) {
   const pts = [[cx, z0], [cx + r0, z0], [cx + r1, z0 + h], [cx, z0 + h]];
   const mw = new oc.BRepBuilderAPI_MakeWire_1();
