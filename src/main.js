@@ -126,6 +126,7 @@ async function scanPhoto(file) {
   window.__profile = null;
   window.__bin = null;
   binName.value = file.name.replace(/\.[^.]+$/, "");
+  designRev = 1;
   try {
     const imageData = await fileToImageData(file);
     // adaptive resolution: phones get 12 px/mm (4x less work and memory
@@ -267,6 +268,17 @@ optStrict.addEventListener("change", runProfile);
 const binSec = document.getElementById("bin");
 const binStatus = document.getElementById("bin-status");
 const binName = document.getElementById("bin-name");
+const binPrefix = document.getElementById("bin-prefix");
+
+// filename prefix: per-device convenience, editable, default GPGF-t2b
+try { binPrefix.value = localStorage.getItem("t2b.prefix") ?? "GPGF-t2b"; }
+catch { binPrefix.value = "GPGF-t2b"; }
+binPrefix.addEventListener("change", () => {
+  try { localStorage.setItem("t2b.prefix", binPrefix.value); } catch {}
+});
+
+// revision: R01 for a fresh scan, uprevs when a STEP is dropped back in
+let designRev = 1;
 const binThickness = document.getElementById("bin-thickness");
 const optMagnets = document.getElementById("opt-magnets");
 const optEdge = document.getElementById("opt-edge");
@@ -354,15 +366,22 @@ binThickness.addEventListener("change", runProfile);
 optMagnets.addEventListener("change", runProfile);
 optEdge.addEventListener("change", runProfile);
 
+// spaces are fine in filenames; strip only what filesystems reject
+const cleanName = (s) => s.replace(/[\\/:*?"<>|\x00-\x1f]+/g, "-")
+  .replace(/\s+/g, " ").trim();
+
 exportBtn.addEventListener("click", async () => {
   const p = window.__profile;
   if (!p || !p.ok) return;
-  const name = (binName.value || "tool").trim().replace(/[^\w.-]+/g, "-");
+  const name = cleanName(binName.value) || "tool";
+  const prefix = cleanName(binPrefix.value);
   const L = p.layout;
   try {
     binStatus.textContent = "writing STEP…";
-    const r = await cadApi.exportStep(name);
-    const fname = `${name}_${L.nx}X${L.ny}Y${L.nz}Z.step`;
+    const stem = `${prefix ? prefix + " " : ""}${name} - ` +
+      `${L.nx}X${L.ny}Y${L.nz}Z R${String(designRev).padStart(2, "0")}`;
+    const r = await cadApi.exportStep(name, designRev, stem);
+    const fname = `${stem}.step`;
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([r.text], { type: "application/step" }));
     a.download = fname;
@@ -397,6 +416,7 @@ async function reviseFromStep(file) {
     window.__warp = null;
     window.__contour = { ok: true, contourMm: design.contour, fromStep: true };
     binName.value = design.name || "tool";
+    designRev = (design.rev || 1) + 1;
     const p = design.params || {};
     if (p.thickness) binThickness.value = p.thickness;
     if (p.clearance != null) sliders.clearance.value = p.clearance;
@@ -406,8 +426,8 @@ async function reviseFromStep(file) {
     optSymmetric.checked = p.symmetric !== false;
     optMagnets.checked = !!(p.magnets && p.magnets.enabled);
     optEdge.value = (p.edge && p.edge.style) || "";
-    scanStatus.textContent =
-      `revising '${design.name}' from its embedded design`;
+    scanStatus.textContent = `revising '${design.name}' from its embedded ` +
+      `design (next export is R${String(designRev).padStart(2, "0")})`;
     await runProfile();
   } catch (e) {
     scanStatus.textContent = "error: " + e.message;

@@ -63,16 +63,17 @@ async function build(profile, params) {
   };
 }
 
-async function exportStep(name) {
+async function exportStep(name, rev = 1, label = null) {
   const oc = await init();
   if (!lastBuild) throw new Error("no bin built yet");
   const design = {
-    name, rev: 1, source: "gpgf-tool2bin",
+    name, rev, source: "gpgf-tool2bin",
     params: lastBuild.params,
     layout: lastBuild.profile.layout,
     contour: lastBuild.profile.contour || null,
   };
-  const text = writeStepText(oc, lastBuild.shape, { name: `${name} bin`, design });
+  const text = writeStepText(oc, lastBuild.shape,
+    { name: label || `${name} bin`, design });
   return { ok: true, text, bytes: text.length };
 }
 

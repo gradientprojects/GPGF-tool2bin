@@ -1,6 +1,6 @@
 {
-  "name": "GPGF Tool2Bin",
-  "short_name": "Tool2Bin",
+  "name": "GPGF tool2bin",
+  "short_name": "tool2bin",
   "description": "Photo of a tool on a printed template becomes a Gridfinity bin STEP file. Runs entirely in your browser.",
   "start_url": ".",
   "display": "standalone",

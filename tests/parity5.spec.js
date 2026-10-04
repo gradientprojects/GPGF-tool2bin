@@ -65,6 +65,7 @@ test.describe("stage-6 CAD parity: STEP exports vs reference kernel", () => {
     const text = fs.readFileSync(file, "utf8");
     expect(text.startsWith("ISO-10303-21")).toBe(true);
     expect(text).toContain("S2S|");
-    expect((await dl).suggestedFilename()).toMatch(/snips-closed_\dX\dY\dZ\.step/);
+    expect((await dl).suggestedFilename())
+      .toMatch(/^GPGF-t2b snips-closed - \dX\dY\dZ R01\.step$/);
   });
 });

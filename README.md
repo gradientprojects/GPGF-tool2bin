@@ -1,4 +1,4 @@
-# GPGF-Tool2Bin
+# GPGF-tool2bin
 
 Photograph a tool on a printed template — get a Gridfinity bin as a
 **STEP** file, ready for CAD or slicing. Everything runs in your
@@ -20,9 +20,13 @@ account, no tracking. After the first load it works offline (PWA).
 4. A full Gridfinity bin (42 mm grid, standard foot profile, optional
    6 mm magnet pockets, chamfered rim) is built in OpenCASCADE —
    in your browser — and shown in 3D.
-5. **Download the STEP.** The design (parameters + tool outline) rides
-   inside the file as STEP comments: drop an exported file back onto
-   the page and it reopens for revision, no photo needed.
+5. **Download the STEP.** Files are named like
+   `GPGF-t2b snips - 2X4Y5Z R01.step` — footprint in Gridfinity units
+   plus a revision; the prefix is editable and remembered per device.
+   The design (parameters + tool outline) rides inside the file as
+   STEP comments: drop an exported file back onto the page and it
+   reopens for revision, no photo needed — and the next export uprevs
+   itself (R01 → R02).
 
 Pocket guarantees: by default the pocket keeps the requested clearance
 to the tool *everywhere* (smoothing may only bow outward), and a "max

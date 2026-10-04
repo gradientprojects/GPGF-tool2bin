@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GPGF-Tool2Bin</title>
+  <title>GPGF-tool2bin</title>
   <meta name="description" content="Photo of a tool on a printed template
     becomes a Gridfinity bin STEP file. Runs entirely in your browser.">
   <link rel="manifest" href="./manifest.webmanifest">
@@ -12,7 +12,7 @@
 </head>
 <body>
   <main>
-    <h1>GPGF-Tool2Bin</h1>
+    <h1>GPGF-tool2bin</h1>
     <p class="tag">Photo of a tool &rarr; Gridfinity bin STEP. Everything runs in
       your browser &mdash; photos never leave your device.</p>
 
@@ -69,6 +69,9 @@
     <section id="bin" style="display:none">
       <h2>4 · Bin</h2>
       <div class="hint">
+        <label>prefix <input type="text" id="bin-prefix" size="9"
+          title="goes in front of every exported filename; clear it if you don't want one"></label>
+        &nbsp;
         <label>name <input type="text" id="bin-name" size="14"></label>
         &nbsp;
         <label>tool thickness <input type="number" id="bin-thickness"
