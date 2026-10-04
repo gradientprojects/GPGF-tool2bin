@@ -191,10 +191,9 @@ function treatEdges(oc, shape, edges, style, size, label, log) {
 }
 
 /** periodic/clamped profile tck -> planar 3D B-spline edge at height z.
- *  clamp converts the periodic curve to clamped form (same geometry) —
- *  EXPERIMENTAL: ThruSections over clamped closed wires ABORTS this
- *  OCCT 7.6 wasm build, so clamp stays off outside bisect harnesses. */
-function profileEdge(oc, tck, z, periodic, clamp = false) {
+ *  (NOTE: SetNotPeriodic-clamped closed wires ABORT ThruSections in this
+ *  OCCT 7.6 wasm — do not try that route again; see changelog 2026-10-04.) */
+function profileEdge(oc, tck, z, periodic) {
   let geom;
   if (periodic) {
     const { C, k } = tck;
@@ -210,7 +209,6 @@ function profileEdge(oc, tck, z, periodic, clamp = false) {
       mults.SetValue(i + 1, 1);
     }
     geom = new oc.Geom_BSplineCurve_1(poles, knots, mults, k, true);
-    if (clamp) geom.SetNotPeriodic();
   } else {
     const { t, cx, cy, k } = tck;
     const n = t.length - k - 1;
@@ -233,10 +231,10 @@ function profileEdge(oc, tck, z, periodic, clamp = false) {
   return edgeFromCurve(oc, asCurveHandle(oc, geom));
 }
 
-function profileWire(oc, segs, periodic, z, clamp = false) {
+function profileWire(oc, segs, periodic, z) {
   const mw = new oc.BRepBuilderAPI_MakeWire_1();
   if (periodic) {
-    mw.Add_1(profileEdge(oc, segs[0], z, true, clamp));
+    mw.Add_1(profileEdge(oc, segs[0], z, true));
   } else {
     for (const tck of segs) mw.Add_1(profileEdge(oc, tck, z, false));
     if (!mw.IsDone()) throw new Error("wire gap: segment endpoints do not connect");
@@ -308,35 +306,68 @@ function wrapTangents(q0) {
   return t;
 }
 
-function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log,
-                           clamp = false) {
-  const wireExact = (z) => profileWire(oc, segs, periodic, z, clamp);
-  const stride = Math.max(1, Math.trunc(pocketPts.length / 1500));
-  const q0 = [];
-  for (let i = 0; i < pocketPts.length; i += stride) q0.push(pocketPts[i]);
-  const t = wrapTangents(q0);
-  const nrm = t.map(([tx, ty]) => [ty, -tx]); // outward for CCW
-
-  const wireOffset = (off, z) => {
-    const q = q0.map((p, i) => [p[0] + nrm[i][0] * off, p[1] + nrm[i][1] * off]);
-    const tck = periodicFit(q, 1e-9, 2.0);
-    const mw = new oc.BRepBuilderAPI_MakeWire_1();
-    mw.Add_1(profileEdge(oc, tck, z, true, clamp));
-    const w = mw.Wire();
-    mw.delete();
-    return w;
-  };
-
-  const wires = [wireExact(H - size)];
+/** Pocket-entry flare cutter (chamfer/fillet on the pocket rim).
+ *
+ *  PARASOLID RULE (Onshape bisect, 2026-10-04): never hand ThruSections
+ *  section curves in different knot bases. Its ruled knot-merge emits
+ *  surfaces Onshape rejects geometry-dependently (snips-closed failed,
+ *  scissors survived) while every OCCT check passes. For periodic
+ *  profiles all sections are therefore built from the exact profile's
+ *  own control points, offset along control-polygon normals — one
+ *  shared knot vector, no merging, and the off=0 rim is exactly the
+ *  pocket-wall curve. Pole offset ≈ curve offset within a few percent
+ *  of the 1 mm flare, and exact at off=0. */
+function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log) {
+  let mkWire;
+  if (periodic) {
+    const { C, k } = segs[0];
+    const n = C.length;
+    const nrmP = [];
+    for (let i = 0; i < n; i++) {
+      const p0 = C[(i - 1 + n) % n], p1 = C[(i + 1) % n];
+      const dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+      const l = Math.hypot(dx, dy) || 1e-9;
+      nrmP.push([dy / l, -dx / l]); // outward for CCW
+    }
+    mkWire = (off, z) => {
+      const C2 = C.map((p, i) => [p[0] + nrmP[i][0] * off, p[1] + nrmP[i][1] * off]);
+      const mw = new oc.BRepBuilderAPI_MakeWire_1();
+      mw.Add_1(profileEdge(oc, { C: C2, k }, z, true));
+      const w = mw.Wire();
+      mw.delete();
+      return w;
+    };
+  } else {
+    // segmented profiles (corner tools): reference construction — raw
+    // outward offset of the dense samples, refit periodically. Mixed
+    // bases, so subject to the Parasolid rule above; convert to a
+    // per-segment pole offset if a corner tool ever fails an import.
+    const stride = Math.max(1, Math.trunc(pocketPts.length / 1500));
+    const q0 = [];
+    for (let i = 0; i < pocketPts.length; i += stride) q0.push(pocketPts[i]);
+    const t = wrapTangents(q0);
+    const nrm = t.map(([tx, ty]) => [ty, -tx]); // outward for CCW
+    mkWire = (off, z) => {
+      if (off === 0) return profileWire(oc, segs, periodic, z);
+      const q = q0.map((p, i) => [p[0] + nrm[i][0] * off, p[1] + nrm[i][1] * off]);
+      const tck = periodicFit(q, 1e-9, 2.0);
+      const mw = new oc.BRepBuilderAPI_MakeWire_1();
+      mw.Add_1(profileEdge(oc, tck, z, true));
+      const w = mw.Wire();
+      mw.delete();
+      return w;
+    };
+  }
+  const wires = [mkWire(0, H - size)];
   if (style === "fillet") {
     for (let i = 1; i <= 6; i++) {
       const ang = (Math.PI / 2) * (i / 6);
-      wires.push(wireOffset((1 - Math.cos(ang)) * size, H - size + Math.sin(ang) * size));
+      wires.push(mkWire((1 - Math.cos(ang)) * size, H - size + Math.sin(ang) * size));
     }
   } else {
-    wires.push(wireOffset(size, H));
+    wires.push(mkWire(size, H));
   }
-  wires.push(wireOffset(size, H + 0.5));
+  wires.push(mkWire(size, H + 0.5));
   const s = thruSections(oc, wires, true, style !== "fillet");
   log(`pocket entry: ${style} ${size} mm (lofted cutter)`);
   return s;
@@ -356,7 +387,6 @@ export function cellCenters(nx, ny) {
 export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   magnets = null, edgeStyle = null, edgeSize = 1.0,
   center = [0, 0], pocketPts = null, log = () => {},
-  clampEntry = false,
 } = {}) {
   const H = nz * 7.0;
   let depth = thickness;
@@ -386,7 +416,7 @@ export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   if ((edgeStyle === "fillet" || edgeStyle === "chamfer") && edgeSize > 0 &&
       pocketPts) {
     cutters.push(pocketEntryCutter(oc, segs, periodic, pocketPts, edgeSize, H,
-      edgeStyle, log, clampEntry));
+      edgeStyle, log));
   }
   if (magnets) {
     const { r, depth: md, chamfer: mc } = magnets;
