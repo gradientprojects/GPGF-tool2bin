@@ -1,0 +1,12 @@
+{
+  "name": "GPGF Tool2Bin",
+  "short_name": "Tool2Bin",
+  "description": "Photo of a tool on a printed template becomes a Gridfinity bin STEP file. Runs entirely in your browser.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#1c2128",
+  "theme_color": "#1c2128",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

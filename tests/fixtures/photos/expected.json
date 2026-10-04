@@ -1,0 +1,64 @@
+{
+ "mobile": {
+  "photo": "scraper-template.jpg",
+  "ok": true,
+  "error": "",
+  "mode": "template",
+  "warpSize": [
+   2590,
+   3352
+  ],
+  "contourBbox": [
+   40.63622541386573,
+   105.31038396185576
+  ],
+  "areaMm2": 2498.75,
+  "angleDeg": -1.9,
+  "flipped": true,
+  "layout": {
+   "nx": 2,
+   "ny": 3,
+   "nz": 5,
+   "H": 35,
+   "depth": 25
+  },
+  "binDims": [
+   83.5000002,
+   125.5000002,
+   35.0000002
+  ],
+  "zTop": 35.0000001,
+  "warnings": []
+ },
+ "desktop": {
+  "photo": "snips-closed.jpg",
+  "ok": true,
+  "error": "",
+  "mode": "plain",
+  "warpSize": [
+   4318,
+   5588
+  ],
+  "contourBbox": [
+   54.50710467222953,
+   138.16958092252344
+  ],
+  "areaMm2": 4353.1175,
+  "angleDeg": -0.8,
+  "flipped": false,
+  "layout": {
+   "nx": 2,
+   "ny": 4,
+   "nz": 5,
+   "H": 35,
+   "depth": 25
+  },
+  "binDims": [
+   83.5000002,
+   167.5000002,
+   35.0000002
+  ],
+  "zTop": 35.0000001,
+  "warnings": []
+ }
+}

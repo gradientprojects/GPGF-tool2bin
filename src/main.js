@@ -128,9 +128,14 @@ async function scanPhoto(file) {
   binName.value = file.name.replace(/\.[^.]+$/, "");
   try {
     const imageData = await fileToImageData(file);
+    // adaptive resolution: phones get 12 px/mm (4x less work and memory
+    // than the reference 20); parity suites always pass 20 explicitly
+    const mobile = matchMedia("(max-width: 800px)").matches ||
+      (navigator.userAgentData && navigator.userAgentData.mobile);
+    const pxmm = mobile ? 12 : 20;
     scanStatus.textContent =
-      `detecting (${imageData.width}×${imageData.height})…`;
-    const r = await cvRequest({ type: "warp", imageData, paper: "letter" },
+      `detecting (${imageData.width}×${imageData.height}, ${pxmm} px/mm)…`;
+    const r = await cvRequest({ type: "warp", imageData, paper: "letter", pxmm },
       [imageData.data.buffer]);
     if (!r.ok) throw new Error(r.error);
     window.__warp = { ...r, preview: undefined };
@@ -201,21 +206,45 @@ function drawProfile(toolMm, r) {
   }
 }
 
+const sliders = {};
+for (const [id, label] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
+                           ["scallop", "v-scallop"], ["wall", "v-wall"]]) {
+  const el = document.getElementById(`sl-${id}`);
+  const lbl = document.getElementById(label);
+  el.addEventListener("input", () => { lbl.textContent = el.value; });
+  el.addEventListener("change", () => runProfile());
+  sliders[id] = el;
+}
+const optSymmetric = document.getElementById("opt-symmetric");
+optSymmetric.addEventListener("change", () => runProfile());
+
+function currentParams() {
+  return {
+    thickness: +binThickness.value || 25,
+    clearance: +sliders.clearance.value,
+    smooth_r: +sliders.smooth.value,
+    scallop_d: +sliders.scallop.value,
+    scallop_blend: 4.0,
+    min_wall: +sliders.wall.value,
+    symmetric: optSymmetric.checked,
+    max_contour: optMax.checked,
+    strict_contain: optStrict.checked,
+    magnets: { enabled: optMagnets.checked,
+               r: 3.075, depth: 2.1, chamfer: 0.5 },
+    edge: optEdge.value ? { style: optEdge.value, size: 1.0 } : {},
+  };
+}
+
 async function runProfile() {
   const cres = window.__contour;
   if (!cres || !cres.ok) return;
   profileSec.style.display = "block";
   profileStatus.textContent = "fitting pocket profile…";
   try {
-    const params = {
-      thickness: +binThickness.value || 25,
-      max_contour: optMax.checked,
-      strict_contain: optStrict.checked,
-      magnets: { enabled: optMagnets.checked,
-                 r: 3.075, depth: 2.1, chamfer: 0.5 },
-      edge: optEdge.value ? { style: optEdge.value, size: 1.0 } : {},
-    };
-    const r = await cvRequest({ type: "profile", params }, [], 600000);
+    const params = currentParams();
+    const msg = { type: "profile", params };
+    if (cres.fromStep) msg.contourMm = cres.contourMm;
+    const r = await cvRequest(msg, [], 600000);
     if (!r.ok) throw new Error(r.error);
     window.__profile = { ...r, params };
     drawProfile(cres.contourMm, r);
@@ -296,9 +325,18 @@ async function runBuild() {
   exportBtn.disabled = true;
   binStatus.textContent = "building bin solid…";
   try {
+    // the tool contour rides into the STEP's embedded design so an
+    // exported file can be revised without the photo
+    const tool = window.__contour.contourMm;
+    const stride = Math.max(1, Math.ceil(tool.length / 1500));
+    const contour = [];
+    for (let i = 0; i < tool.length; i += stride) {
+      contour.push([Math.round(tool[i][0] * 1000) / 1000,
+                    Math.round(tool[i][1] * 1000) / 1000]);
+    }
     const r = await cadApi.build(
       { segs: p.segs, periodic: p.periodic, layout: p.layout,
-        center: p.center, pocketPts: p.pocketPts },
+        center: p.center, pocketPts: p.pocketPts, contour },
       p.params);
     window.__bin = { ok: r.ok, depth: r.depth, H: r.H, bbox: r.bbox,
       logs: r.logs, ms: r.ms };
@@ -347,13 +385,53 @@ window.__segmentWarp = async (blob, field) => {
 window.__profileRun = (contourMm, params) =>
   cvRequest({ type: "profile", contourMm, params }, [], 600000);
 
+// drop an exported STEP back in: revise its embedded design, no photo
+async function reviseFromStep(file) {
+  scanStatus.textContent = "reading STEP design…";
+  try {
+    const text = await file.text();
+    const m = [...text.matchAll(/\/\* S2S\| (.*?) \*\//gs)].map((x) => x[1]);
+    if (!m.length) throw new Error("no Tool2Bin design found in this STEP");
+    const design = JSON.parse(m.join(""));
+    if (!design.contour) throw new Error("design has no contour (old export?)");
+    window.__warp = null;
+    window.__contour = { ok: true, contourMm: design.contour, fromStep: true };
+    binName.value = design.name || "tool";
+    const p = design.params || {};
+    if (p.thickness) binThickness.value = p.thickness;
+    if (p.clearance != null) sliders.clearance.value = p.clearance;
+    if (p.smooth_r != null) sliders.smooth.value = p.smooth_r;
+    if (p.scallop_d != null) sliders.scallop.value = p.scallop_d;
+    if (p.min_wall != null) sliders.wall.value = p.min_wall;
+    optSymmetric.checked = p.symmetric !== false;
+    optMagnets.checked = !!(p.magnets && p.magnets.enabled);
+    optEdge.value = (p.edge && p.edge.style) || "";
+    scanStatus.textContent =
+      `revising '${design.name}' from its embedded design`;
+    await runProfile();
+  } catch (e) {
+    scanStatus.textContent = "error: " + e.message;
+  }
+}
+
+function handleFile(file) {
+  if (!file) return;
+  if (/\.ste?p$/i.test(file.name)) return reviseFromStep(file);
+  return scanPhoto(file);
+}
+
 document.getElementById("photo").addEventListener("change",
-  (e) => scanPhoto(e.target.files[0]));
+  (e) => handleFile(e.target.files[0]));
 document.addEventListener("dragover", (e) => e.preventDefault());
 document.addEventListener("drop", (e) => {
   e.preventDefault();
-  if (e.dataTransfer.files[0]) scanPhoto(e.dataTransfer.files[0]);
+  handleFile(e.dataTransfer.files[0]);
 });
+
+// PWA: cache-on-fetch service worker -> works offline after first load
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
 
 cadCheck();
 cvCheck();

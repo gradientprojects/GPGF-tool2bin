@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GPGF-Tool2Bin</title>
+  <meta name="description" content="Photo of a tool on a printed template
+    becomes a Gridfinity bin STEP file. Runs entirely in your browser.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#1c2128">
   <link rel="stylesheet" href="./src/style.css">
 </head>
 <body>
@@ -12,8 +16,19 @@
     <p class="tag">Photo of a tool &rarr; Gridfinity bin STEP. Everything runs in
       your browser &mdash; photos never leave your device.</p>
 
+    <section id="template">
+      <h2>1 · Print the template</h2>
+      <p class="hint">Print at 100% scale, verify the 100 mm ruler, place
+        your tool in the gray field. Plain paper works too (worse in
+        uneven light).</p>
+      <a href="templates/tool2bin-template-letter.pdf" download>&#128424;
+        Letter template</a> &nbsp;·&nbsp;
+      <a href="templates/tool2bin-template-a4.pdf" download>&#128424;
+        A4 template</a>
+    </section>
+
     <section id="scan">
-      <h2>Scan a tool</h2>
+      <h2>2 · Scan a tool</h2>
       <label class="filebtn">
         <input type="file" id="photo" accept="image/*" capture="environment">
         &#128247; Take / choose a photo
@@ -26,20 +41,33 @@
     </section>
 
     <section id="pocket" style="display:none">
-      <h2>Pocket profile</h2>
+      <h2>3 · Pocket profile</h2>
       <div class="hint">
         <label><input type="checkbox" id="opt-max-contour"> max contour
           (don't follow notches inward)</label>
         &nbsp;&nbsp;
         <label><input type="checkbox" id="opt-strict" checked> guarantee
           clearance everywhere</label>
+        &nbsp;&nbsp;
+        <label><input type="checkbox" id="opt-symmetric" checked>
+          symmetric</label>
+      </div>
+      <div class="hint" id="sliders">
+        <label>clearance <input type="range" id="sl-clearance" min="0"
+          max="3" step="0.1" value="1"> <span id="v-clearance">1.0</span> mm</label>
+        <label>smoothness <input type="range" id="sl-smooth" min="0"
+          max="20" step="1" value="8"> <span id="v-smooth">8</span> mm</label>
+        <label>scallop &#8960; <input type="range" id="sl-scallop" min="0"
+          max="40" step="1" value="25"> <span id="v-scallop">25</span> mm</label>
+        <label>min wall <input type="range" id="sl-wall" min="1.8"
+          max="8" step="0.1" value="3"> <span id="v-wall">3.0</span> mm</label>
       </div>
       <div id="profile-status" class="hint"></div>
       <canvas id="profile-view" width="560" height="420"></canvas>
     </section>
 
     <section id="bin" style="display:none">
-      <h2>Bin</h2>
+      <h2>4 · Bin</h2>
       <div class="hint">
         <label>name <input type="text" id="bin-name" size="14"></label>
         &nbsp;
@@ -56,6 +84,8 @@
       <div id="bin-status" class="hint"></div>
       <canvas id="bin-view" width="560" height="420"></canvas>
       <div><button id="export-step" disabled>&#11015; Download STEP</button></div>
+      <p class="hint">The STEP carries its own design: drop an exported
+        .step back onto this page to revise it (no photo needed).</p>
     </section>
 
     <section id="checks">

@@ -70,6 +70,7 @@ async function exportStep(name) {
     name, rev: 1, source: "gpgf-tool2bin",
     params: lastBuild.params,
     layout: lastBuild.profile.layout,
+    contour: lastBuild.profile.contour || null,
   };
   const text = writeStepText(oc, lastBuild.shape, { name: `${name} bin`, design });
   return { ok: true, text, bytes: text.length };
