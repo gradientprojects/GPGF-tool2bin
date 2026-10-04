@@ -1,15 +1,22 @@
-// Web Worker: owns the OpenCASCADE WASM instance; all CAD runs off the main
-// thread. C1 scope: prove the kernel works end-to-end by building a box and
-// exporting a real STEP.
+// Web Worker: owns the OpenCASCADE WASM instance; all CAD runs off the
+// main thread. C5: full Gridfinity bin build from the profile stage's
+// splines (src/bin3d.js drives the raw kernel), preview tessellation,
+// STEP export with embedded design JSON.
 import { expose } from "comlink";
 import opencascade from "replicad-opencascadejs/src/replicad_single.js";
 import opencascadeWasm from "replicad-opencascadejs/src/replicad_single.wasm?url";
 import { setOC, makeBaseBox } from "replicad";
+import { buildBin, tessellate, bbox, writeStepText } from "./bin3d.js";
 
 let ready = null;
+let ocInstance = null;
 function init() {
   if (!ready) {
-    ready = opencascade({ locateFile: () => opencascadeWasm }).then((oc) => setOC(oc));
+    ready = opencascade({ locateFile: () => opencascadeWasm }).then((oc) => {
+      ocInstance = oc;
+      setOC(oc);
+      return oc;
+    });
   }
   return ready;
 }
@@ -22,4 +29,50 @@ async function helloStep() {
   return { bytes: blob.size, head };
 }
 
-expose({ helloStep });
+let lastBuild = null; // { shape, depth, H, profile, params }
+
+/** profile: the cv-worker profile result (segs/periodic/layout/center/
+ *  pocketPts); params: UI params (thickness, magnets, edge). */
+async function build(profile, params) {
+  const oc = await init();
+  const logs = [];
+  const t0 = performance.now();
+  if (lastBuild && lastBuild.shape) lastBuild.shape.delete();
+  const magnets = params.magnets && params.magnets.enabled
+    ? { r: +params.magnets.r, depth: +params.magnets.depth,
+        chamfer: +params.magnets.chamfer }
+    : null;
+  const edge = params.edge || {};
+  const { shape, depth, H } = buildBin(oc, profile.segs, profile.periodic,
+    profile.layout.nx, profile.layout.ny, profile.layout.nz,
+    +(params.thickness ?? 25), {
+      magnets, edgeStyle: edge.style || null, edgeSize: +(edge.size || 0),
+      center: profile.center, pocketPts: profile.pocketPts,
+      log: (l) => logs.push(l),
+    });
+  lastBuild = { shape, depth, H, profile, params };
+  const mesh = tessellate(oc, shape);
+  const bb = bbox(oc, shape);
+  return {
+    ok: true, depth, H, bbox: bb, logs,
+    mesh: {
+      positions: Float32Array.from(mesh.positions),
+      indices: Uint32Array.from(mesh.indices),
+    },
+    ms: Math.round(performance.now() - t0),
+  };
+}
+
+async function exportStep(name) {
+  const oc = await init();
+  if (!lastBuild) throw new Error("no bin built yet");
+  const design = {
+    name, rev: 1, source: "gpgf-tool2bin",
+    params: lastBuild.params,
+    layout: lastBuild.profile.layout,
+  };
+  const text = writeStepText(oc, lastBuild.shape, { name: `${name} bin`, design });
+  return { ok: true, text, bytes: text.length };
+}
+
+expose({ helloStep, build, exportStep });

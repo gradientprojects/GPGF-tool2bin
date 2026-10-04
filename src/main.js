@@ -1,10 +1,17 @@
 import { wrap } from "comlink";
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 // results Playwright asserts on
 window.__selftest = { cad: null, cv: null };
 window.__warp = null;
 window.__contour = null;
 window.__profile = null;
+window.__bin = null;
+
+// one CAD worker for the whole app (comlink)
+const cadApi = wrap(new Worker(new URL("./cad.worker.js", import.meta.url),
+  { type: "module" }));
 
 function setCheck(id, ok, text) {
   const el = document.getElementById(id);
@@ -55,9 +62,7 @@ async function fileToImageData(fileOrBlob) {
 
 async function cadCheck() {
   try {
-    const worker = new Worker(new URL("./cad.worker.js", import.meta.url),
-      { type: "module" });
-    const api = wrap(worker);
+    const api = cadApi;
     const t0 = performance.now();
     const r = await api.helloStep();
     const ok = r.head.startsWith("ISO-10303-21");
@@ -118,6 +123,9 @@ async function scanPhoto(file) {
   scanStatus.textContent = "reading photo…";
   window.__warp = null;
   window.__contour = null;
+  window.__profile = null;
+  window.__bin = null;
+  binName.value = file.name.replace(/\.[^.]+$/, "");
   try {
     const imageData = await fileToImageData(file);
     scanStatus.textContent =
@@ -200,12 +208,16 @@ async function runProfile() {
   profileStatus.textContent = "fitting pocket profile…";
   try {
     const params = {
+      thickness: +binThickness.value || 25,
       max_contour: optMax.checked,
       strict_contain: optStrict.checked,
+      magnets: { enabled: optMagnets.checked,
+                 r: 3.075, depth: 2.1, chamfer: 0.5 },
+      edge: optEdge.value ? { style: optEdge.value, size: 1.0 } : {},
     };
     const r = await cvRequest({ type: "profile", params }, [], 600000);
     if (!r.ok) throw new Error(r.error);
-    window.__profile = r;
+    window.__profile = { ...r, params };
     drawProfile(cres.contourMm, r);
     const L = r.layout;
     profileStatus.textContent =
@@ -213,6 +225,7 @@ async function runProfile() {
       `${(L.ny * 42 - 0.5).toFixed(1)}×${L.H} mm), pocket depth ${L.depth} mm` +
       (r.warnings.length ? ` — ⚠ ${r.warnings.join("; ")}` : "") +
       ` (${(r.ms / 1000).toFixed(1)}s)`;
+    await runBuild();
   } catch (e) {
     window.__profile = { ok: false, error: String(e) };
     profileStatus.textContent = "error: " + e.message;
@@ -220,6 +233,108 @@ async function runProfile() {
 }
 optMax.addEventListener("change", runProfile);
 optStrict.addEventListener("change", runProfile);
+
+// ---- bin build + 3D preview + export ---------------------------------------
+const binSec = document.getElementById("bin");
+const binStatus = document.getElementById("bin-status");
+const binName = document.getElementById("bin-name");
+const binThickness = document.getElementById("bin-thickness");
+const optMagnets = document.getElementById("opt-magnets");
+const optEdge = document.getElementById("opt-edge");
+const exportBtn = document.getElementById("export-step");
+
+let three = null;
+function threeView() {
+  if (three) return three;
+  const canvas = document.getElementById("bin-view");
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  const scene = new THREE.Scene();
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 2000);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.2));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.1);
+  dir.position.set(1, -1.2, 1.8);
+  scene.add(dir);
+  const controls = new OrbitControls(cam, canvas);
+  controls.addEventListener("change", () => renderer.render(scene, cam));
+  three = { renderer, scene, cam, controls, mesh: null };
+  return three;
+}
+
+function showMesh(positions, indices, size) {
+  const t = threeView();
+  if (t.mesh) { t.scene.remove(t.mesh); t.mesh.geometry.dispose(); }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geo.setIndex(new THREE.BufferAttribute(indices, 1));
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xff7a30, metalness: 0.05, roughness: 0.65,
+    flatShading: false, side: THREE.DoubleSide,
+  });
+  t.mesh = new THREE.Mesh(geo, mat);
+  t.scene.add(t.mesh);
+  const canvas = t.renderer.domElement;
+  const m = Math.max(size[0], size[1], size[2]) * 0.72;
+  const aspect = canvas.clientWidth / canvas.clientHeight || 4 / 3;
+  Object.assign(t.cam, { left: -m * aspect, right: m * aspect, top: m, bottom: -m });
+  t.cam.position.set(m, -m, m);
+  t.cam.up.set(0, 0, 1);
+  geo.computeBoundingBox();
+  const c = geo.boundingBox.getCenter(new THREE.Vector3());
+  t.cam.lookAt(c);
+  t.controls.target.copy(c);
+  t.cam.updateProjectionMatrix();
+  t.renderer.setSize(canvas.clientWidth || 560, canvas.clientHeight || 420, false);
+  t.renderer.render(t.scene, t.cam);
+}
+
+async function runBuild() {
+  const p = window.__profile;
+  if (!p || !p.ok) return;
+  binSec.style.display = "block";
+  exportBtn.disabled = true;
+  binStatus.textContent = "building bin solid…";
+  try {
+    const r = await cadApi.build(
+      { segs: p.segs, periodic: p.periodic, layout: p.layout,
+        center: p.center, pocketPts: p.pocketPts },
+      p.params);
+    window.__bin = { ok: r.ok, depth: r.depth, H: r.H, bbox: r.bbox,
+      logs: r.logs, ms: r.ms };
+    showMesh(r.mesh.positions, r.mesh.indices, r.bbox.dims);
+    binStatus.textContent =
+      `solid ${r.bbox.dims.map((v) => v.toFixed(1)).join("×")} mm, ` +
+      `pocket depth ${r.depth} mm (${(r.ms / 1000).toFixed(1)}s)`;
+    exportBtn.disabled = false;
+  } catch (e) {
+    window.__bin = { ok: false, error: String(e) };
+    binStatus.textContent = "error: " + (e.message || e);
+  }
+}
+binThickness.addEventListener("change", runProfile);
+optMagnets.addEventListener("change", runProfile);
+optEdge.addEventListener("change", runProfile);
+
+exportBtn.addEventListener("click", async () => {
+  const p = window.__profile;
+  if (!p || !p.ok) return;
+  const name = (binName.value || "tool").trim().replace(/[^\w.-]+/g, "-");
+  const L = p.layout;
+  try {
+    binStatus.textContent = "writing STEP…";
+    const r = await cadApi.exportStep(name);
+    const fname = `${name}_${L.nx}X${L.ny}Y${L.nz}Z.step`;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([r.text], { type: "application/step" }));
+    a.download = fname;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    binStatus.textContent = `exported ${fname} (${(r.bytes / 1024).toFixed(0)} KB)`;
+  } catch (e) {
+    binStatus.textContent = "export error: " + (e.message || e);
+  }
+});
 
 // parity-suite hook: run stages 2+3 on an injected warp canvas (a
 // losslessly-dumped reference warp), bypassing stage 1 entirely.

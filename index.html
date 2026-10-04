@@ -38,6 +38,26 @@
       <canvas id="profile-view" width="560" height="420"></canvas>
     </section>
 
+    <section id="bin" style="display:none">
+      <h2>Bin</h2>
+      <div class="hint">
+        <label>name <input type="text" id="bin-name" size="14"></label>
+        &nbsp;
+        <label>tool thickness <input type="number" id="bin-thickness"
+          value="25" min="1" max="60" step="0.5" style="width:4em"> mm</label>
+        &nbsp;
+        <label><input type="checkbox" id="opt-magnets" checked> magnets</label>
+        &nbsp;
+        <label>edge <select id="opt-edge">
+          <option value="chamfer" selected>chamfer</option>
+          <option value="">square</option>
+        </select></label>
+      </div>
+      <div id="bin-status" class="hint"></div>
+      <canvas id="bin-view" width="560" height="420"></canvas>
+      <div><button id="export-step" disabled>&#11015; Download STEP</button></div>
+    </section>
+
     <section id="checks">
       <h2>Engine self-test</h2>
       <div class="check" id="check-cad"><span class="dot"></span>

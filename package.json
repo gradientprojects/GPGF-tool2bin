@@ -14,7 +14,8 @@
     "@techstark/opencv-js": "^4.11.0-release.1",
     "comlink": "^4.4.2",
     "replicad": "^0.23.1",
-    "replicad-opencascadejs": "^0.23.0"
+    "replicad-opencascadejs": "^0.23.0",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

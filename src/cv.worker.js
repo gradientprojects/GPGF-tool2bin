@@ -130,10 +130,12 @@ async function profile({ contourMm = null, params = {} }) {
   const src = contourMm || lastContourMm;
   if (!src) throw new Error("no contour available; run contour first");
   const r = profileResponse(c, src, params, (l) => logs.push(l));
-  lastProfile = r; // segs/tcks stay worker-side for the C5 solid build
+  lastProfile = r;
+  // segs (tck data) ride along: the CAD worker builds the solid from them
   return { ok: true, fit: r.fit, pocketPts: r.pocketPts, layout: r.layout,
     center: r.center, scallops: r.scallops, warnings: r.warnings,
-    periodic: r.periodic, logs, ms: Math.round(performance.now() - t0) };
+    periodic: r.periodic, segs: r.segs, logs,
+    ms: Math.round(performance.now() - t0) };
 }
 
 const HANDLERS = {
