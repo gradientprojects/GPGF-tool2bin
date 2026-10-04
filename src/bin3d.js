@@ -2,8 +2,9 @@
 // replicad build's kernel, same OCCT underneath as the reference's OCP).
 // Build-specific substitutions, geometry-identical:
 //  - straight edges are degree-1 B-splines (GC_MakeSegment not bound)
-//  - the magnet chamfer cone is a ruled loft of two circles
-//    (BRepPrimAPI_MakeCone not bound)
+//  - the magnet chamfer cone is a revolved trapezoid, giving the same
+//    analytic conical face as the reference (BRepPrimAPI_MakeCone not
+//    bound; a circle-pair loft writes B-spline bands that break importers)
 // `oc` is the ready opencascade instance throughout.
 import { periodicFit } from "./smoothprof.js";
 
@@ -185,8 +186,11 @@ function treatEdges(oc, shape, edges, style, size, label, log) {
   return shape;
 }
 
-/** periodic/clamped profile tck -> planar 3D B-spline edge at height z */
-function profileEdge(oc, tck, z, periodic) {
+/** periodic/clamped profile tck -> planar 3D B-spline edge at height z.
+ *  clamp converts the periodic curve to clamped form (same geometry) —
+ *  EXPERIMENTAL: ThruSections over clamped closed wires ABORTS this
+ *  OCCT 7.6 wasm build, so clamp stays off outside bisect harnesses. */
+function profileEdge(oc, tck, z, periodic, clamp = false) {
   let geom;
   if (periodic) {
     const { C, k } = tck;
@@ -202,6 +206,7 @@ function profileEdge(oc, tck, z, periodic) {
       mults.SetValue(i + 1, 1);
     }
     geom = new oc.Geom_BSplineCurve_1(poles, knots, mults, k, true);
+    if (clamp) geom.SetNotPeriodic();
   } else {
     const { t, cx, cy, k } = tck;
     const n = t.length - k - 1;
@@ -224,10 +229,10 @@ function profileEdge(oc, tck, z, periodic) {
   return edgeFromCurve(oc, asCurveHandle(oc, geom));
 }
 
-function profileWire(oc, segs, periodic, z) {
+function profileWire(oc, segs, periodic, z, clamp = false) {
   const mw = new oc.BRepBuilderAPI_MakeWire_1();
   if (periodic) {
-    mw.Add_1(profileEdge(oc, segs[0], z, true));
+    mw.Add_1(profileEdge(oc, segs[0], z, true, clamp));
   } else {
     for (const tck of segs) mw.Add_1(profileEdge(oc, tck, z, false));
     if (!mw.IsDone()) throw new Error("wire gap: segment endpoints do not connect");
@@ -260,24 +265,28 @@ function cylinder(oc, cx, cy, z0, r, h) {
   return s;
 }
 
-function circleWire(oc, cx, cy, z, r) {
-  const ax = new oc.gp_Ax2_3(new oc.gp_Pnt_3(cx, cy, z), new oc.gp_Dir_4(0, 0, 1));
-  const circ = new oc.gp_Circ_2(ax, r);
-  const mk = new oc.BRepBuilderAPI_MakeEdge_8(circ);
-  const e = mk.Edge();
-  mk.delete();
+/** magnet chamfer cone (r0 at z0 -> r1 at z0+h): a trapezoid revolved about
+ *  the axis, so the lateral face is a true conical surface. A loft of two
+ *  circle wires writes B-spline bands instead, which Onshape/Bambu fail to
+ *  sew (the reference uses BRepPrimAPI_MakeCone, absent from this wasm). */
+function cone(oc, cx, cy, z0, r0, r1, h) {
+  const pts = [[cx, z0], [cx + r0, z0], [cx + r1, z0 + h], [cx, z0 + h]];
   const mw = new oc.BRepBuilderAPI_MakeWire_1();
-  mw.Add_1(e);
+  for (let i = 0; i < 4; i++) {
+    const [xa, za] = pts[i], [xb, zb] = pts[(i + 1) % 4];
+    const me = new oc.BRepBuilderAPI_MakeEdge_3(
+      new oc.gp_Pnt_3(xa, cy, za), new oc.gp_Pnt_3(xb, cy, zb));
+    mw.Add_1(me.Edge());
+    me.delete();
+  }
   const w = mw.Wire();
   mw.delete();
-  return w;
-}
-
-/** magnet chamfer cone (r0 at z0 -> r1 at z0+h) as a ruled loft */
-function cone(oc, cx, cy, z0, r0, r1, h) {
-  return thruSections(oc,
-    [circleWire(oc, cx, cy, z0, r0), circleWire(oc, cx, cy, z0 + h, r1)],
-    true, true);
+  const ax = new oc.gp_Ax1_2(new oc.gp_Pnt_3(cx, cy, z0),
+    new oc.gp_Dir_4(0, 0, 1));
+  const mr = new oc.BRepPrimAPI_MakeRevol_2(faceFromWire(oc, w), ax, false);
+  const s = mr.Shape();
+  mr.delete();
+  return s;
 }
 
 // np.gradient along axis 0 with the reference's wrap-pad trick
@@ -294,8 +303,9 @@ function wrapTangents(q0) {
   return t;
 }
 
-function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log) {
-  const wireExact = (z) => profileWire(oc, segs, periodic, z);
+function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log,
+                           clamp = false) {
+  const wireExact = (z) => profileWire(oc, segs, periodic, z, clamp);
   const stride = Math.max(1, Math.trunc(pocketPts.length / 1500));
   const q0 = [];
   for (let i = 0; i < pocketPts.length; i += stride) q0.push(pocketPts[i]);
@@ -306,7 +316,7 @@ function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log) {
     const q = q0.map((p, i) => [p[0] + nrm[i][0] * off, p[1] + nrm[i][1] * off]);
     const tck = periodicFit(q, 1e-9, 2.0);
     const mw = new oc.BRepBuilderAPI_MakeWire_1();
-    mw.Add_1(profileEdge(oc, tck, z, true));
+    mw.Add_1(profileEdge(oc, tck, z, true, clamp));
     const w = mw.Wire();
     mw.delete();
     return w;
@@ -341,6 +351,7 @@ export function cellCenters(nx, ny) {
 export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   magnets = null, edgeStyle = null, edgeSize = 1.0,
   center = [0, 0], pocketPts = null, log = () => {},
+  clampEntry = false,
 } = {}) {
   const H = nz * 7.0;
   let depth = thickness;
@@ -370,7 +381,7 @@ export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   if ((edgeStyle === "fillet" || edgeStyle === "chamfer") && edgeSize > 0 &&
       pocketPts) {
     cutters.push(pocketEntryCutter(oc, segs, periodic, pocketPts, edgeSize, H,
-      edgeStyle, log));
+      edgeStyle, log, clampEntry));
   }
   if (magnets) {
     const { r, depth: md, chamfer: mc } = magnets;
@@ -435,10 +446,12 @@ export function writeStepText(oc, shape, { name = null, design = null } = {}) {
       const docH = new oc.Handle_TDocStd_Document_2(doc);
       const st = oc.XCAFDoc_DocumentTool.ShapeTool(doc.Main()).get();
       const label = st.AddShape(shape, false, false);
-      oc.TDataStd_Name.Set_3(label, new oc.TCollection_ExtendedString_2(name, true));
+      oc.TDataStd_Name.Set_1(label, new oc.TCollection_ExtendedString_2(name, true));
       const wr = new oc.STEPCAFControl_Writer_1();
+      // multi MUST be null: any string (even "") flips OCCT into external-
+      // reference mode and out.step becomes a 45-entity stub
       if (!wr.Transfer_1(docH, oc.STEPControl_StepModelType.STEPControl_AsIs,
-          "", new oc.Message_ProgressRange_1())) {
+          null, new oc.Message_ProgressRange_1())) {
         throw new Error("CAF transfer failed");
       }
       status = wr.Write(filename);
