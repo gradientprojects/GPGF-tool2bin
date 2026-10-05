@@ -47,6 +47,8 @@ test.describe("stage-1 warp parity vs oracle", () => {
     test(`warp parity: ${d.photo}`, async ({ page }) => {
       test.setTimeout(240000);
       await page.goto("/");
+      // the oracle ran at 20 px/mm; "fine detail" restores it in the UI
+      await page.check("#opt-fine");
       await page.setInputFiles("#photo", path.join(POC, d.photo));
       await expect
         .poll(async () => page.evaluate(() => window.__warp), { timeout: 200000 })
