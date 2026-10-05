@@ -27,13 +27,19 @@ let nextReq = 1;
 const pending = new Map();
 cvWorker.onmessage = (e) => {
   const p = pending.get(e.data.reqId);
-  if (p) { pending.delete(e.data.reqId); p.resolve(e.data); }
+  if (!p) return;
+  if (e.data.progress) {
+    if (p.onProgress) p.onProgress(e.data);
+    return;
+  }
+  pending.delete(e.data.reqId);
+  p.resolve(e.data);
 };
 cvWorker.onerror = (e) => {
   for (const p of pending.values()) p.reject(new Error(e.message));
   pending.clear();
 };
-function cvRequest(msg, transfer = [], timeoutMs = 120000) {
+function cvRequest(msg, transfer = [], timeoutMs = 120000, onProgress = null) {
   const reqId = nextReq++;
   return new Promise((resolve, reject) => {
     const to = setTimeout(() => {
@@ -41,6 +47,7 @@ function cvRequest(msg, transfer = [], timeoutMs = 120000) {
       reject(new Error(`cv worker timeout (${timeoutMs / 1000}s)`));
     }, timeoutMs);
     pending.set(reqId, {
+      onProgress,
       resolve: (v) => { clearTimeout(to); resolve(v); },
       reject: (err) => { clearTimeout(to); reject(err); },
     });
@@ -48,14 +55,23 @@ function cvRequest(msg, transfer = [], timeoutMs = 120000) {
   });
 }
 
-async function fileToImageData(fileOrBlob) {
-  // from-image: apply the photo's EXIF orientation like the camera intended
+async function fileToImageData(fileOrBlob, maxEdge = 4096) {
+  // from-image: apply the photo's EXIF orientation like the camera
+  // intended. Long edge capped at 4096 px: phone cameras shoot
+  // 12-48 MP, which blows past iOS Safari's ~16 MP canvas ceiling
+  // (blank getImageData / crash) and multiplies every CV pass for
+  // detail the warp resamples away anyway. 4096 passes the reference
+  // corpus photos (4032 px) through untouched, keeping parity exact.
   const bmp = await createImageBitmap(fileOrBlob, { imageOrientation: "from-image" });
+  const s = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height));
+  const w = Math.round(bmp.width * s), h = Math.round(bmp.height * s);
   const cnv = document.createElement("canvas");
-  cnv.width = bmp.width; cnv.height = bmp.height;
+  cnv.width = w; cnv.height = h;
   const ctx = cnv.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(bmp, 0, 0);
-  const id = ctx.getImageData(0, 0, bmp.width, bmp.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bmp, 0, 0, w, h);
+  const id = ctx.getImageData(0, 0, w, h);
   bmp.close();
   return id;
 }
@@ -103,21 +119,30 @@ async function cvCheck() {
 const scanStatus = document.getElementById("scan-status");
 const previewCnv = document.getElementById("warp-preview");
 
-/** in-progress status: message + indeterminate bar + elapsed seconds.
- *  Any later plain `.textContent =` write clears the bar (and the
- *  ticker notices and stops itself). */
+/** in-progress status: message + progress bar + elapsed seconds. The
+ *  bar cycles until the returned updater reports a real fraction, then
+ *  turns determinate. Any later plain `.textContent =` write clears
+ *  the bar (and the ticker notices and stops itself). */
 function busyStatus(el, msg) {
   el.textContent = msg;
+  const label = el.firstChild; // the text node
   const secs = document.createElement("span");
   const bar = document.createElement("div");
   bar.className = "bar";
-  bar.appendChild(document.createElement("div"));
+  const fill = document.createElement("div");
+  bar.appendChild(fill);
   el.append(secs, bar);
   const t0 = Date.now();
   const tick = setInterval(() => {
     if (!el.contains(bar)) { clearInterval(tick); return; }
     secs.textContent = ` ${Math.round((Date.now() - t0) / 1000)} s`;
   }, 1000);
+  return (frac, stage) => {
+    if (!el.contains(bar)) return;
+    fill.style.animation = "none";
+    fill.style.width = `${Math.round(Math.min(1, Math.max(0, frac)) * 100)}%`;
+    label.nodeValue = stage ? `${msg} ${stage}, ${Math.round(frac * 100)}%` : msg;
+  };
 }
 
 // plain-paper size: sets the mm scale of the fallback (template mode
@@ -128,6 +153,7 @@ catch { optPaper.value = "letter"; }
 optPaper.addEventListener("change", () => {
   try { localStorage.setItem("t2b.paper", optPaper.value); } catch {}
 });
+const optFine = document.getElementById("opt-fine");
 
 function drawContourOverlay(contourPx, warpSize) {
   const ctx = previewCnv.getContext("2d");
@@ -155,16 +181,15 @@ async function scanPhoto(file) {
   designRev = 1;
   try {
     const imageData = await fileToImageData(file);
-    // adaptive resolution: phones get 12 px/mm (4x less work and memory
-    // than the reference 20); parity suites always pass 20 explicitly
-    const mobile = matchMedia("(max-width: 800px)").matches ||
-      (navigator.userAgentData && navigator.userAgentData.mobile);
-    const pxmm = mobile ? 12 : 20;
-    busyStatus(scanStatus,
+    // 12 px/mm (~300 dpi) everywhere: the reference's 20 costs ~3x the
+    // wasm time for detail beyond what a printed bin can use. Parity
+    // suites pass 20 explicitly; the "fine detail" toggle restores it.
+    const pxmm = optFine.checked ? 20 : 12;
+    const prog = busyStatus(scanStatus,
       `detecting (${imageData.width}×${imageData.height}, ${pxmm} px/mm)…`);
     const r = await cvRequest(
       { type: "warp", imageData, paper: optPaper.value, pxmm },
-      [imageData.data.buffer]);
+      [imageData.data.buffer], 120000, (p) => prog(p.frac, p.stage));
     if (!r.ok) throw new Error(r.error);
     window.__warp = { ...r, preview: undefined };
     const ctx = previewCnv.getContext("2d");
@@ -176,8 +201,9 @@ async function scanPhoto(file) {
         `${r.inliers}/${r.total} corner inliers (${(r.ms / 1000).toFixed(1)}s)`
       : `plain paper ${r.pageMm[0]}×${r.pageMm[1]} mm, ` +
         `skew ${(r.skew * 100).toFixed(1)}% (${(r.ms / 1000).toFixed(1)}s)`;
-    busyStatus(scanStatus, warpLine + " — segmenting…");
-    const r2 = await cvRequest({ type: "contour" }, [], 600000);
+    const prog2 = busyStatus(scanStatus, warpLine + " —");
+    const r2 = await cvRequest({ type: "contour" }, [], 600000,
+      (p) => prog2(p.frac, p.stage));
     if (!r2.ok) throw new Error(r2.error);
     window.__contour = r2;
     drawContourOverlay(r2.contourPx, r.warpSize);
@@ -428,7 +454,8 @@ exportBtn.addEventListener("click", async () => {
 // parity-suite hook: run stages 2+3 on an injected warp canvas (a
 // losslessly-dumped reference warp), bypassing stage 1 entirely.
 window.__segmentWarp = async (blob, field) => {
-  const imageData = await fileToImageData(blob);
+  // the injected reference warp canvas exceeds the photo cap; never scale it
+  const imageData = await fileToImageData(blob, Infinity);
   return cvRequest({ type: "contour", imageData, field },
     [imageData.data.buffer], 600000);
 };

@@ -65,12 +65,13 @@ function fillHoles(mask, W, H) {
  * or null. Returns { contourPx: [[x,y]...] sub-pixel, mask: CV_8UC1 0/1
  * Mat (caller deletes), areaMm2 }.
  */
-export function segment(c, warpRgba, field, pxmm, log = () => {}) {
+export function segment(c, warpRgba, field, pxmm, log = () => {}, tick = () => {}) {
   const Wc = warpRgba.cols, Hc = warpRgba.rows;
   const rgb = new c.Mat();
   c.cvtColor(warpRgba, rgb, c.COLOR_RGBA2RGB);
   const lab8 = new c.Mat();
   c.cvtColor(rgb, lab8, c.COLOR_RGB2Lab);
+  tick(0.05);
 
   let x0 = 0, y0 = 0, domW = Wc, domH = Hc, rect = null;
   if (field) {
@@ -108,6 +109,7 @@ export function segment(c, warpRgba, field, pxmm, log = () => {}) {
     });
   }
 
+  tick(0.15);
   const labs = new c.Mat();
   c.resize(labDomF, labs, new c.Size(0, 0), 0.1, 0.1, c.INTER_AREA);
   labDomF.delete();
@@ -133,6 +135,7 @@ export function segment(c, warpRgba, field, pxmm, log = () => {}) {
     if (holeMean < 0.5) break;
   }
   ker25.delete();
+  tick(0.25);
   if (th > 12) {
     log(`uneven lighting: coarse threshold raised to ${th} ` +
         `(hole ${Math.round(holeMean * 100)}% of field)`);
@@ -193,6 +196,7 @@ export function segment(c, warpRgba, field, pxmm, log = () => {}) {
   const bg = new c.Mat();
   c.resize(bgsF, bg, new c.Size(domW, domH), 0, 0, c.INTER_CUBIC);
   bgsF.delete();
+  tick(0.4);
 
   // two-sided illumination-normalized score on the domain
   const scoreDom = new c.Mat(domH, domW, c.CV_32FC1);
@@ -208,6 +212,7 @@ export function segment(c, warpRgba, field, pxmm, log = () => {}) {
     }
   }
   wDomF.delete(); bg.delete();
+  tick(0.55);
   c.GaussianBlur(scoreDom, scoreDom, new c.Size(0, 0), 1.0);
 
   // full-canvas score (marker band stays 0 by construction)
@@ -228,6 +233,7 @@ export function segment(c, warpRgba, field, pxmm, log = () => {}) {
   const labels = new c.Mat(), stats = new c.Mat(), cents = new c.Mat();
   const nLbl = c.connectedComponentsWithStats(bMat, labels, stats, cents, 4, c.CV_32S);
   bMat.delete(); cents.delete();
+  tick(0.7);
   if (nLbl <= 1) {
     labels.delete(); stats.delete();
     throw new Error("no tool found above score threshold");
@@ -268,6 +274,7 @@ export function segment(c, warpRgba, field, pxmm, log = () => {}) {
   }
   ker4.delete(); labels.delete(); stats.delete();
 
+  tick(0.8);
   const filled = fillHoles(main8.data, Wc, Hc);
   let areaPx = 0;
   for (let p = 0; p < Wc * Hc; p++) areaPx += filled[p];
@@ -288,6 +295,7 @@ export function segment(c, warpRgba, field, pxmm, log = () => {}) {
   }
   keepMat.delete();
 
+  tick(0.9);
   const contours = findContours(score, Hc, Wc, SCORE_TH);
   if (!contours.length) { filledMat.delete(); throw new Error("no contour traced"); }
   let best = contours[0];

@@ -106,6 +106,8 @@ test.describe("stage-2/3 segmentation + pose parity vs oracle", () => {
     test(`end-to-end from photo: ${d.photo}`, async ({ page }) => {
       test.setTimeout(600000);
       await page.goto("/");
+      // the oracle ran at 20 px/mm; "fine detail" restores it in the UI
+      await page.check("#opt-fine");
       await page.setInputFiles("#photo", path.join(POC, d.photo));
       await expect
         .poll(async () => page.evaluate(() => window.__contour), { timeout: 580000 })

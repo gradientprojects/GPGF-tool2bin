@@ -45,7 +45,8 @@ select, input[type=text], input[type=number] {
 .bar { height:4px; border-radius:2px; background:var(--inset);
        overflow:hidden; margin-top:8px; }
 .bar div { height:100%; width:30%; border-radius:2px; background:var(--acc);
-           animation:barslide 1.2s ease-in-out infinite; }
+           animation:barslide 1.2s ease-in-out infinite;
+           transition:width .25s ease; }
 @keyframes barslide { from { margin-left:-30%; } to { margin-left:100%; } }
 
 #warp-preview { display:block; margin-top:12px; max-width:100%;

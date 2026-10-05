@@ -76,11 +76,16 @@ async function selftest(imageData) {
   return { ok: true, caps, aruco, error, build: build.trim() };
 }
 
-async function warp({ imageData, paper = "letter", pxmm = 20 }) {
+async function warp({ imageData, paper = "letter", pxmm = 20 }, tick = () => {}) {
   const c = await cvReady();
   const logs = [];
   const t0 = performance.now();
-  const r = detectAndWarp(c, imageData, paper, pxmm, (l) => logs.push(l));
+  tick(0.05, "finding the sheet");
+  // the detect stages have no finer hooks than their log milestones
+  let n = 0;
+  const log = (l) => { logs.push(l); tick(Math.min(0.1 + ++n * 0.2, 0.7)); };
+  const r = detectAndWarp(c, imageData, paper, pxmm, log);
+  tick(0.85, "warping");
   if (lastWarp) lastWarp.delete();
   lastWarp = r.warp;
   lastField = r.field || null;
@@ -94,7 +99,7 @@ async function warp({ imageData, paper = "letter", pxmm = 20 }) {
 // Stages 2+3 (segmentation + pose) on the last warp, or on an injected
 // warp canvas (imageData + field) — the latter is how the parity suite
 // gates this port on input identical to the reference's.
-async function contour({ imageData = null, field, pxmm }) {
+async function contour({ imageData = null, field, pxmm }, tick = () => {}) {
   const c = await cvReady();
   const logs = [];
   const log = (l) => logs.push(l);
@@ -108,8 +113,11 @@ async function contour({ imageData = null, field, pxmm }) {
   } else if (!src) {
     throw new Error("no warp available; run warp first");
   }
-  const seg = segment(c, src, fld, px, log);
+  const seg = segment(c, src, fld, px, log,
+    (f) => tick(0.02 + f * 0.83, "segmenting"));
+  tick(0.87, "finding the symmetry axis");
   const pose = findPose(c, seg.mask, log);
+  tick(0.97, "orienting");
   const rot = rotateContour(seg.contourPx, pose.angle, pose.center, src.cols);
   const { cMm, flipped, centerMm } = toOrientedMm(rot, px, log);
   lastContourMm = cMm;
@@ -140,15 +148,16 @@ async function profile({ contourMm = null, params = {} }) {
 
 const HANDLERS = {
   selftest: (d) => selftest(d.imageData),
-  warp: (d) => warp(d),
-  contour: (d) => contour(d),
+  warp: (d, tick) => warp(d, tick),
+  contour: (d, tick) => contour(d, tick),
   profile: (d) => profile(d),
 };
 
 self.onmessage = async (e) => {
   const { type = "selftest", reqId } = e.data;
+  const tick = (frac, stage) => self.postMessage({ reqId, progress: true, frac, stage });
   try {
-    const result = await HANDLERS[type](e.data);
+    const result = await HANDLERS[type](e.data, tick);
     const transfer = result.preview ? [result.preview.data.buffer] : [];
     self.postMessage({ reqId, ...result }, transfer);
   } catch (err) {

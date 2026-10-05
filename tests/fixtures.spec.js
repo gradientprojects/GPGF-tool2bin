@@ -1,8 +1,10 @@
 // Self-sufficient end-to-end smoke (C6 exit gate): the committed,
 // EXIF-stripped fixture photos run through the real UI chain and land
 // on the committed expected values — no reference repo needed, runs in
-// CI on every push. Desktop runs the plain-paper photo at 20 px/mm,
-// the mobile project runs the template photo at its adaptive 12 px/mm.
+// CI on every push. Desktop runs the plain-paper photo with "fine
+// detail" checked (20 px/mm, the reference resolution the committed
+// expectations encode); the mobile project runs the template photo at
+// the 12 px/mm default — together they cover both resolutions.
 //
 // Regenerate expectations (local): GEN_EXPECTED=1 npx playwright test fixtures
 import { test, expect } from "@playwright/test";
@@ -14,12 +16,13 @@ const EXPECTED = path.join(PHOTOS, "expected.json");
 const GEN = !!process.env.GEN_EXPECTED;
 
 const PLAN = [
-  { photo: "snips-closed.jpg", project: "desktop", mode: "desktop" },
+  { photo: "snips-closed.jpg", project: "desktop", mode: "desktop", fine: true },
   { photo: "scraper-template.jpg", project: "mobile", mode: "mobile" },
 ];
 
-async function runChain(page, photo) {
+async function runChain(page, photo, fine = false) {
   await page.goto("/");
+  if (fine) await page.check("#opt-fine");
   await page.setInputFiles("#photo", path.join(PHOTOS, photo));
   await expect
     .poll(async () => page.evaluate(() => window.__bin), { timeout: 560000 })
@@ -42,12 +45,12 @@ async function runChain(page, photo) {
 }
 
 test.describe("fixture photos through the full chain", () => {
-  for (const { photo, project, mode } of PLAN) {
+  for (const { photo, project, mode, fine } of PLAN) {
     test(`${mode}: ${photo}`, async ({ page }, testInfo) => {
       test.skip(testInfo.project.name !== project,
         `runs in the ${project} project only`);
       test.setTimeout(600000);
-      const r = await runChain(page, photo);
+      const r = await runChain(page, photo, fine);
       expect(r.ok, r.error).toBe(true);
       if (GEN) {
         const all = fs.existsSync(EXPECTED)
