@@ -19,5 +19,6 @@ h2 { font-size:16px; margin:0 0 10px; color:var(--dim); }
            font-weight:600; padding:12px 18px; border-radius:8px; cursor:pointer; }
 .filebtn input { display:none; }
 .hint { color:var(--dim); font-size:14px; margin:10px 0 0; }
+.opt { color:var(--dim); font-size:15px; font-weight:normal; }
 #warp-preview { display:block; margin-top:12px; max-width:100%;
                 border-radius:8px; }

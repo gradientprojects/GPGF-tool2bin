@@ -17,10 +17,15 @@
       your browser &mdash; photos never leave your device.</p>
 
     <section id="template">
-      <h2>1 · Print the template</h2>
-      <p class="hint">Print at 100% scale, verify the 100 mm ruler, place
-        your tool in the gray field. Plain paper works too (worse in
-        uneven light).</p>
+      <h2>1 · Grab a sheet of paper <span class="opt">(template optional)</span></h2>
+      <p class="hint">Any plain letter/A4 sheet works as the backdrop —
+        no printing needed. The printed template below is worth it when
+        the quick way struggles: uneven light or shadows ("paper sheet
+        not found"), a white or light table the sheet blends into, or
+        when you want the best accuracy — its marker border corrects
+        perspective far better than four paper corners, and its 100 mm
+        ruler lets you verify the scale. Print at 100%, place the tool
+        in the gray field.</p>
       <a href="templates/tool2bin-template-letter.pdf" download>&#128424;
         Letter template</a> &nbsp;·&nbsp;
       <a href="templates/tool2bin-template-a4.pdf" download>&#128424;
@@ -33,9 +38,13 @@
         <input type="file" id="photo" accept="image/*" capture="environment">
         &#128247; Take / choose a photo
       </label>
-      <p class="hint">Tool on the printed template (best) or on plain
-        letter paper. On a phone this opens the camera. Or drag a photo
-        anywhere on the page.</p>
+      <p class="hint">Tool on the sheet. On a phone this opens the
+        camera. Or drag a photo anywhere on the page.
+        <label>Plain-paper size: <select id="opt-paper">
+          <option value="letter" selected>letter</option>
+          <option value="a4">A4</option>
+        </select></label> (sets the scale; ignored when the template is
+        detected).</p>
       <div id="scan-status" class="hint"></div>
       <canvas id="warp-preview" style="display:none"></canvas>
     </section>

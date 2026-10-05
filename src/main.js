@@ -103,6 +103,15 @@ async function cvCheck() {
 const scanStatus = document.getElementById("scan-status");
 const previewCnv = document.getElementById("warp-preview");
 
+// plain-paper size: sets the mm scale of the fallback (template mode
+// auto-detects its page); per-device convenience like the prefix
+const optPaper = document.getElementById("opt-paper");
+try { optPaper.value = localStorage.getItem("t2b.paper") ?? "letter"; }
+catch { optPaper.value = "letter"; }
+optPaper.addEventListener("change", () => {
+  try { localStorage.setItem("t2b.paper", optPaper.value); } catch {}
+});
+
 function drawContourOverlay(contourPx, warpSize) {
   const ctx = previewCnv.getContext("2d");
   const s = previewCnv.width / warpSize[0];
@@ -136,7 +145,8 @@ async function scanPhoto(file) {
     const pxmm = mobile ? 12 : 20;
     scanStatus.textContent =
       `detecting (${imageData.width}×${imageData.height}, ${pxmm} px/mm)…`;
-    const r = await cvRequest({ type: "warp", imageData, paper: "letter", pxmm },
+    const r = await cvRequest(
+      { type: "warp", imageData, paper: optPaper.value, pxmm },
       [imageData.data.buffer]);
     if (!r.ok) throw new Error(r.error);
     window.__warp = { ...r, preview: undefined };
