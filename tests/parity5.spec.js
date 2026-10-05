@@ -52,6 +52,9 @@ test.describe("stage-6 CAD parity: STEP exports vs reference kernel", () => {
       .not.toBeNull();
     const bin = await page.evaluate(() => window.__bin);
     expect(bin.ok, bin.error || "").toBe(true);
+    // the deboss must have been CUT, not warning-skipped
+    expect(bin.logs.join(" | ")).toContain("rev deboss 'R01'");
+    expect(bin.logs.join(" | ")).not.toContain("deboss skipped");
     const oracle = JSON.parse(fs.readFileSync(
       path.join(POC, "_ORACLE", "snips-closed.json"), "utf8"));
     // stage-1/2 already differ RANSAC-level e2e; the bin dims are grid-

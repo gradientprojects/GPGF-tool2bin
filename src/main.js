@@ -281,6 +281,7 @@ binPrefix.addEventListener("change", () => {
 let designRev = 1;
 const binThickness = document.getElementById("bin-thickness");
 const optMagnets = document.getElementById("opt-magnets");
+const optDeboss = document.getElementById("opt-deboss");
 const optEdge = document.getElementById("opt-edge");
 const exportBtn = document.getElementById("export-step");
 
@@ -346,10 +347,13 @@ async function runBuild() {
       contour.push([Math.round(tool[i][0] * 1000) / 1000,
                     Math.round(tool[i][1] * 1000) / 1000]);
     }
+    // rev + deboss are injected at build time: the rev isn't a profile
+    // param, and the deboss toggle must not force a profile re-fit
     const r = await cadApi.build(
       { segs: p.segs, periodic: p.periodic, layout: p.layout,
         center: p.center, pocketPts: p.pocketPts, contour },
-      p.params);
+      { ...p.params, rev: designRev,
+        deboss: { enabled: optDeboss.checked } });
     window.__bin = { ok: r.ok, depth: r.depth, H: r.H, bbox: r.bbox,
       logs: r.logs, ms: r.ms };
     showMesh(r.mesh.positions, r.mesh.indices, r.bbox.dims);
@@ -364,6 +368,7 @@ async function runBuild() {
 }
 binThickness.addEventListener("change", runProfile);
 optMagnets.addEventListener("change", runProfile);
+optDeboss.addEventListener("change", runBuild);
 optEdge.addEventListener("change", runProfile);
 
 // spaces are fine in filenames; strip only what filesystems reject
@@ -425,6 +430,7 @@ async function reviseFromStep(file) {
     if (p.min_wall != null) sliders.wall.value = p.min_wall;
     optSymmetric.checked = p.symmetric !== false;
     optMagnets.checked = !!(p.magnets && p.magnets.enabled);
+    optDeboss.checked = !(p.deboss && p.deboss.enabled === false);
     optEdge.value = (p.edge && p.edge.style) || "";
     scanStatus.textContent = `revising '${design.name}' from its embedded ` +
       `design (next export is R${String(designRev).padStart(2, "0")})`;

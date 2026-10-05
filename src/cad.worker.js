@@ -6,7 +6,9 @@ import { expose } from "comlink";
 import opencascade from "replicad-opencascadejs/src/replicad_single.js";
 import opencascadeWasm from "replicad-opencascadejs/src/replicad_single.wasm?url";
 import { setOC, makeBaseBox } from "replicad";
-import { buildBin, tessellate, bbox, writeStepText } from "./bin3d.js";
+import { buildBin, tessellate, bbox, writeStepText, tryCut } from "./bin3d.js";
+import { ensureDebossFont, debossCutter } from "./deboss.js";
+import debossFontUrl from "./assets/t2b-rev-bold.ttf?url";
 
 let ready = null;
 let ocInstance = null;
@@ -43,13 +45,26 @@ async function build(profile, params) {
         chamfer: +params.magnets.chamfer }
     : null;
   const edge = params.edge || {};
-  const { shape, depth, H } = buildBin(oc, profile.segs, profile.periodic,
+  let { shape, depth, H } = buildBin(oc, profile.segs, profile.periodic,
     profile.layout.nx, profile.layout.ny, profile.layout.nz,
     +(params.thickness ?? 25), {
       magnets, edgeStyle: edge.style || null, edgeSize: +(edge.size || 0),
       center: profile.center, pocketPts: profile.pocketPts,
       log: (l) => logs.push(l),
     });
+  if (!params.deboss || params.deboss.enabled) {
+    const rev = Math.max(1, Math.trunc(+params.rev || 1));
+    const text = "R" + String(rev).padStart(2, "0");
+    try {
+      await ensureDebossFont(fetch(debossFontUrl).then((r) => r.arrayBuffer()));
+      const cutter = debossCutter(text, profile.layout.nx, profile.layout.ny,
+        profile.center);
+      shape = tryCut(oc, shape, cutter.wrapped,
+        `rev deboss '${text}' (0.4 mm, underside)`, (l) => logs.push(l));
+    } catch (err) {
+      logs.push(`WARNING: rev deboss skipped (${err})`);
+    }
+  }
   lastBuild = { shape, depth, H, profile, params };
   const mesh = tessellate(oc, shape);
   const bb = bbox(oc, shape);

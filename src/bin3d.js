@@ -114,7 +114,7 @@ function fuse(oc, a, b) {
   return s;
 }
 
-function cutAll(oc, base, tools) {
+export function cutAll(oc, base, tools) {
   if (!tools.length) return base;
   const op = new oc.BRepAlgoAPI_Cut_1();
   const args = new oc.TopTools_ListOfShape_1();
@@ -128,6 +128,21 @@ function cutAll(oc, base, tools) {
   const s = op.Shape();
   op.delete(); args.delete(); tl.delete();
   return s;
+}
+
+/** cut `tool` from `shape`; on any failure keep the uncut shape */
+export function tryCut(oc, shape, tool, label, log) {
+  try {
+    const s = cutAll(oc, shape, [tool]);
+    if (isValid(oc, s)) {
+      log(label);
+      return s;
+    }
+    log(`WARNING: ${label} left an invalid solid; skipped`);
+  } catch (err) {
+    log(`WARNING: ${label} failed (${err}); skipped`);
+  }
+  return shape;
 }
 
 export function isValid(oc, shape) {
