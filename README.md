@@ -19,7 +19,9 @@ account, no tracking. After the first load it works offline (PWA).
    live controls.
 4. A full Gridfinity bin (42 mm grid, standard foot profile, optional
    6 mm magnet pockets, chamfered rim) is built in OpenCASCADE —
-   in your browser — and shown in 3D.
+   in your browser — and shown in 3D. The revision (R01, R02, …) is
+   debossed 0.4 mm into the underside so printed bins stay
+   identifiable; it can be toggled off.
 5. **Download the STEP.** Files are named like
    `GPGF-t2b snips - 2X4Y5Z R01.step` — footprint in Gridfinity units
    plus a revision; the prefix is editable and remembered per device.
@@ -52,4 +54,17 @@ the full chain standalone.
 
 ## License
 
-Not yet chosen — all rights reserved for now.
+Copyright © 2026 Gradient Projects.
+[GNU AGPL-3.0](LICENSE). In short: use it, print with it, study it,
+modify it — but if you host this app (or a service built from its
+code, modified or not, even one that only talks to users over a
+network), you must make your complete source available under the same
+terms.
+
+- **Your exports are yours.** The STEP files and bins this app
+  produces are your own work product; the AGPL does not apply to them.
+  Print them, sell the prints, do as you like.
+- For licensing under other terms, open an issue on this repository.
+
+Bundled third-party components are listed in
+[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
