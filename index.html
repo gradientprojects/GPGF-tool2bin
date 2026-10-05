@@ -18,14 +18,16 @@
 
     <section id="template">
       <h2>1 · Grab a sheet of paper <span class="opt">(template optional)</span></h2>
-      <p class="hint">Any plain letter/A4 sheet works as the backdrop —
-        no printing needed. The printed template below is worth it when
-        the quick way struggles: uneven light or shadows ("paper sheet
-        not found"), a white or light table the sheet blends into, or
-        when you want the best accuracy — its marker border corrects
-        perspective far better than four paper corners, and its 100 mm
-        ruler lets you verify the scale. Print at 100%, place the tool
-        in the gray field.</p>
+      <ul class="hint">
+        <li>Any plain <b>letter or A4</b> sheet works as the backdrop —
+          no printing needed.</li>
+        <li>The printed template is worth it when: light is uneven or
+          shadowed (&ldquo;paper sheet not found&rdquo;), the sheet blends into a
+          white/light table, or you want the best accuracy — its marker
+          border corrects perspective far better than four paper
+          corners, and its 100 mm ruler verifies the print scale.</li>
+        <li>If you print it: 100% scale, tool goes in the gray field.</li>
+      </ul>
       <a href="templates/tool2bin-template-letter.pdf" download>&#128424;
         Letter template</a> &nbsp;·&nbsp;
       <a href="templates/tool2bin-template-a4.pdf" download>&#128424;
@@ -38,45 +40,80 @@
         <input type="file" id="photo" accept="image/*" capture="environment">
         &#128247; Take / choose a photo
       </label>
-      <p class="hint">Tool on the sheet. On a phone this opens the
-        camera. Or drag a photo anywhere on the page.
-        <label>Plain-paper size: <select id="opt-paper">
-          <option value="letter" selected>letter</option>
-          <option value="a4">A4</option>
-        </select></label> (sets the scale; ignored when the template is
-        detected).</p>
-      <p class="hint">Photo tips: shoot straight down over the tool.
-        For thick tools, step back and use 2×/3× <em>optical</em> zoom
-        if your phone has it — up close, the camera sees the tool's
-        sides and the outline comes out slightly oversized (sheet
-        correction can't fix that). Even, diffuse light beats flash:
-        flash puts glare on shiny tools, but your camera's own flash
-        toggle is there if it's too dim.</p>
+      <ul class="hint">
+        <li>Lay the tool on the sheet; on a phone the button opens the
+          camera. You can also drag a photo anywhere on this page.</li>
+        <li>Shoot straight down over the tool.</li>
+        <li>Thick tool? Step back and use 2×/3× <em>optical</em> zoom if
+          your phone has it — up close, the camera sees the tool&rsquo;s sides
+          and the outline comes out slightly oversized (sheet correction
+          can&rsquo;t fix that).</li>
+        <li>Even, diffuse light beats flash — flash puts glare on shiny
+          tools. Your camera&rsquo;s own flash toggle is there if it&rsquo;s too
+          dim.</li>
+      </ul>
+      <div class="optrow">
+        <label>Plain-paper size
+          <select id="opt-paper">
+            <option value="letter" selected>letter (US)</option>
+            <option value="a4">A4</option>
+          </select></label>
+        <div class="sub">sets the mm scale when you shoot on a plain
+          sheet; ignored when the template is detected</div>
+      </div>
       <div id="scan-status" class="hint"></div>
       <canvas id="warp-preview" style="display:none"></canvas>
     </section>
 
     <section id="pocket" style="display:none">
       <h2>3 · Pocket profile</h2>
-      <div class="hint">
-        <label><input type="checkbox" id="opt-max-contour"> max contour
-          (don't follow notches inward)</label>
-        &nbsp;&nbsp;
+      <div class="optrow">
+        <label><input type="checkbox" id="opt-max-contour"> max contour</label>
+        <div class="sub">pocket uses the tool&rsquo;s convex hull — every
+          notch, gap and concavity is bridged over, leaving one simple
+          outline</div>
+      </div>
+      <div class="optrow">
         <label><input type="checkbox" id="opt-strict" checked> guarantee
           clearance everywhere</label>
-        &nbsp;&nbsp;
-        <label><input type="checkbox" id="opt-symmetric" checked>
-          symmetric</label>
+        <div class="sub">the pocket is never closer to the tool than the
+          clearance below, at every point — smoothing may only bow
+          outward. Off: smoothing can cut tight corners slightly closer
+          (you&rsquo;ll get a warning if it does)</div>
       </div>
-      <div class="hint" id="sliders">
-        <label>clearance <input type="range" id="sl-clearance" min="0"
-          max="3" step="0.1" value="1"> <span id="v-clearance">1.0</span> mm</label>
-        <label>smoothness <input type="range" id="sl-smooth" min="0"
-          max="20" step="1" value="8"> <span id="v-smooth">8</span> mm</label>
-        <label>scallop &#8960; <input type="range" id="sl-scallop" min="0"
-          max="40" step="1" value="25"> <span id="v-scallop">25</span> mm</label>
-        <label>min wall <input type="range" id="sl-wall" min="1.8"
-          max="8" step="0.1" value="3"> <span id="v-wall">3.0</span> mm</label>
+      <div class="optrow">
+        <label><input type="checkbox" id="opt-symmetric" checked> symmetric</label>
+        <div class="sub">mirrors the pocket across the tool&rsquo;s symmetry
+          axis — evens out lighting artifacts on symmetric tools; turn
+          off for genuinely asymmetric ones</div>
+      </div>
+      <div id="sliders">
+        <label class="slrow">clearance
+          <input type="range" id="sl-clearance" min="0" max="3" step="0.1"
+            value="1">
+          <span class="val"><span id="v-clearance">1.0</span> mm</span></label>
+        <div class="sub">gap kept between the tool and the pocket wall —
+          how loose the fit is</div>
+        <label class="slrow">smoothness
+          <input type="range" id="sl-smooth" min="0" max="20" step="1"
+            value="8">
+          <span class="val"><span id="v-smooth">8</span> mm</span></label>
+        <div class="sub">how much the outline is relaxed into a flowing
+          curve — higher hides scan noise and small detail</div>
+        <label class="slrow">scallop &#8960;
+          <input type="range" id="sl-scallop" min="0" max="40" step="1"
+            value="25">
+          <span class="val"><span id="v-scallop">25</span> mm</span></label>
+        <div class="sub">finger scallops at the tool&rsquo;s left and right
+          ends (blue dots in the preview) so you can lift it out —
+          0 removes them</div>
+        <label class="slrow">min wall
+          <input type="range" id="sl-wall" min="1.8" max="8" step="0.1"
+            value="3">
+          <span class="val"><span id="v-wall">3.0</span> mm</span></label>
+        <div class="sub">thinnest allowed material between the pocket and
+          the bin&rsquo;s outside — the bin grows a 42 mm cell when the pocket
+          would get too close</div>
       </div>
       <div id="profile-status" class="hint"></div>
       <canvas id="profile-view" width="560" height="420"></canvas>
@@ -84,30 +121,49 @@
 
     <section id="bin" style="display:none">
       <h2>4 · Bin</h2>
-      <div class="hint">
-        <label>prefix <input type="text" id="bin-prefix" size="9"
-          title="goes in front of every exported filename; clear it if you don't want one"></label>
-        &nbsp;
+      <div class="optrow">
         <label>name <input type="text" id="bin-name" size="14"></label>
-        &nbsp;
+        <div class="sub">part name — goes in the filename and the STEP&rsquo;s
+          part name</div>
+      </div>
+      <div class="optrow">
+        <label>filename prefix <input type="text" id="bin-prefix" size="9"></label>
+        <div class="sub">in front of every exported filename (remembered
+          on this device; clear it if you don&rsquo;t want one)</div>
+      </div>
+      <div class="optrow">
         <label>tool thickness <input type="number" id="bin-thickness"
-          value="25" min="1" max="60" step="0.5" style="width:4em"> mm</label>
-        &nbsp;
+          value="25" min="1" max="60" step="0.5" style="width:4.5em"> mm</label>
+        <div class="sub">sets the pocket depth; bin height rounds up in
+          7 mm Gridfinity units and always keeps a &ge;5 mm floor (very
+          thick tools sit a little proud)</div>
+      </div>
+      <div class="optrow">
         <label><input type="checkbox" id="opt-magnets" checked> magnets</label>
-        &nbsp;
-        <label title="deboss the revision (R01, R02…) 0.4 mm into the underside"><input
-          type="checkbox" id="opt-deboss" checked> rev deboss</label>
-        &nbsp;
-        <label>edge <select id="opt-edge">
-          <option value="chamfer" selected>chamfer</option>
-          <option value="">square</option>
-        </select></label>
+        <div class="sub">pockets for 6&times;2 mm magnets under all four
+          corners of every 42 mm foot, with a chamfered press-fit
+          entry</div>
+      </div>
+      <div class="optrow">
+        <label><input type="checkbox" id="opt-deboss" checked> rev deboss</label>
+        <div class="sub">the revision (R01, R02, …) debossed 0.4 mm into
+          the underside — reads when you flip the bin over</div>
+      </div>
+      <div class="optrow">
+        <label>edge
+          <select id="opt-edge">
+            <option value="chamfer" selected>chamfer</option>
+            <option value="">square</option>
+          </select></label>
+        <div class="sub">1 mm chamfer on the rim and the pocket entry
+          (easier tool drop-in), or sharp square edges</div>
       </div>
       <div id="bin-status" class="hint"></div>
       <canvas id="bin-view" width="560" height="420"></canvas>
       <div><button id="export-step" disabled>&#11015; Download STEP</button></div>
       <p class="hint">The STEP carries its own design: drop an exported
-        .step back onto this page to revise it (no photo needed).</p>
+        .step back onto this page to revise it (no photo needed) — the
+        next export uprevs itself (R01 &rarr; R02).</p>
     </section>
 
     <section id="checks">

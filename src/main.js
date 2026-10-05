@@ -103,6 +103,23 @@ async function cvCheck() {
 const scanStatus = document.getElementById("scan-status");
 const previewCnv = document.getElementById("warp-preview");
 
+/** in-progress status: message + indeterminate bar + elapsed seconds.
+ *  Any later plain `.textContent =` write clears the bar (and the
+ *  ticker notices and stops itself). */
+function busyStatus(el, msg) {
+  el.textContent = msg;
+  const secs = document.createElement("span");
+  const bar = document.createElement("div");
+  bar.className = "bar";
+  bar.appendChild(document.createElement("div"));
+  el.append(secs, bar);
+  const t0 = Date.now();
+  const tick = setInterval(() => {
+    if (!el.contains(bar)) { clearInterval(tick); return; }
+    secs.textContent = ` ${Math.round((Date.now() - t0) / 1000)} s`;
+  }, 1000);
+}
+
 // plain-paper size: sets the mm scale of the fallback (template mode
 // auto-detects its page); per-device convenience like the prefix
 const optPaper = document.getElementById("opt-paper");
@@ -129,7 +146,7 @@ async function scanPhoto(file) {
   if (!file || !file.type.startsWith("image/")) {
     scanStatus.textContent = "that is not an image file"; return;
   }
-  scanStatus.textContent = "reading photo…";
+  busyStatus(scanStatus, "reading photo…");
   window.__warp = null;
   window.__contour = null;
   window.__profile = null;
@@ -143,8 +160,8 @@ async function scanPhoto(file) {
     const mobile = matchMedia("(max-width: 800px)").matches ||
       (navigator.userAgentData && navigator.userAgentData.mobile);
     const pxmm = mobile ? 12 : 20;
-    scanStatus.textContent =
-      `detecting (${imageData.width}×${imageData.height}, ${pxmm} px/mm)…`;
+    busyStatus(scanStatus,
+      `detecting (${imageData.width}×${imageData.height}, ${pxmm} px/mm)…`);
     const r = await cvRequest(
       { type: "warp", imageData, paper: optPaper.value, pxmm },
       [imageData.data.buffer]);
@@ -159,7 +176,7 @@ async function scanPhoto(file) {
         `${r.inliers}/${r.total} corner inliers (${(r.ms / 1000).toFixed(1)}s)`
       : `plain paper ${r.pageMm[0]}×${r.pageMm[1]} mm, ` +
         `skew ${(r.skew * 100).toFixed(1)}% (${(r.ms / 1000).toFixed(1)}s)`;
-    scanStatus.textContent = warpLine + " — segmenting…";
+    busyStatus(scanStatus, warpLine + " — segmenting…");
     const r2 = await cvRequest({ type: "contour" }, [], 600000);
     if (!r2.ok) throw new Error(r2.error);
     window.__contour = r2;
@@ -250,7 +267,7 @@ async function runProfile() {
   const cres = window.__contour;
   if (!cres || !cres.ok) return;
   profileSec.style.display = "block";
-  profileStatus.textContent = "fitting pocket profile…";
+  busyStatus(profileStatus, "fitting pocket profile…");
   try {
     const params = currentParams();
     const msg = { type: "profile", params };
@@ -346,7 +363,7 @@ async function runBuild() {
   if (!p || !p.ok) return;
   binSec.style.display = "block";
   exportBtn.disabled = true;
-  binStatus.textContent = "building bin solid…";
+  busyStatus(binStatus, "building bin solid…");
   try {
     // the tool contour rides into the STEP's embedded design so an
     // exported file can be revised without the photo
@@ -392,7 +409,7 @@ exportBtn.addEventListener("click", async () => {
   const prefix = cleanName(binPrefix.value);
   const L = p.layout;
   try {
-    binStatus.textContent = "writing STEP…";
+    busyStatus(binStatus, "writing STEP…");
     const stem = `${prefix ? prefix + " " : ""}${name} - ` +
       `${L.nx}X${L.ny}Y${L.nz}Z R${String(designRev).padStart(2, "0")}`;
     const r = await cadApi.exportStep(name, designRev, stem);
@@ -421,7 +438,7 @@ window.__profileRun = (contourMm, params) =>
 
 // drop an exported STEP back in: revise its embedded design, no photo
 async function reviseFromStep(file) {
-  scanStatus.textContent = "reading STEP design…";
+  busyStatus(scanStatus, "reading STEP design…");
   try {
     const text = await file.text();
     const m = [...text.matchAll(/\/\* S2S\| (.*?) \*\//gs)].map((x) => x[1]);
