@@ -17,6 +17,10 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # hard caps so a wedged runner fails fast instead of hanging for
+    # half an hour (2026-10-07: playwright install sat 34 min on a
+    # stuck download before being cancelled by hand)
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -24,9 +28,22 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+        timeout-minutes: 5
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 6
+      - run: npx playwright install-deps chromium
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 6
       - run: npm run build
+        timeout-minutes: 5
       - run: npm test
+        timeout-minutes: 15
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -36,6 +53,7 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -51,6 +69,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     # Pages is unavailable on this private repo (free plan); becomes active
     # when the repo goes public. Until then a deploy failure must not redden CI.
     continue-on-error: true
