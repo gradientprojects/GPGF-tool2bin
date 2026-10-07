@@ -378,8 +378,7 @@ function currentParams() {
     strict_contain: optStrict.checked,
     flat_faithful: optFlat.checked,
     scallops: customScallops || undefined,
-    magnets: { enabled: optMagnets.checked,
-               r: 3.075, depth: 2.1, chamfer: 0.5 },
+    magnets: currentMagnets(),
     edge: optEdge.value ? { style: optEdge.value, size: 1.0 } : {},
   };
 }
@@ -430,6 +429,38 @@ binPrefix.addEventListener("change", () => {
 let designRev = 1;
 const binThickness = document.getElementById("bin-thickness");
 const optMagnets = document.getElementById("opt-magnets");
+
+// magnet size (the magnet itself; the pocket adds 0.15/0.1 mm press
+// fit). Ranges keep the Gridfinity foot printable: the pocket + 0.5 mm
+// chamfer must leave ~1 mm of foot wall (centers at +-13 on a 35.6 mm
+// foot bottom), and the cut must leave >= 2 mm above the magnet under
+// the 5 mm minimum floor. Per-device convenience like the prefix.
+const magOd = document.getElementById("mag-od");
+const magH = document.getElementById("mag-h");
+const clampMag = (el) => {
+  const v = +el.value;
+  el.value = Math.min(+el.max, Math.max(+el.min, isFinite(v) ? v : +el.min));
+};
+try {
+  magOd.value = localStorage.getItem("t2b.magod") ?? "6";
+  magH.value = localStorage.getItem("t2b.magh") ?? "2";
+} catch {}
+clampMag(magOd); clampMag(magH);
+function currentMagnets() {
+  return { enabled: optMagnets.checked,
+           r: (+magOd.value + 0.15) / 2,
+           depth: +magH.value + 0.1, chamfer: 0.5 };
+}
+for (const el of [magOd, magH]) {
+  el.addEventListener("change", () => {
+    clampMag(el);
+    try {
+      localStorage.setItem("t2b.magod", magOd.value);
+      localStorage.setItem("t2b.magh", magH.value);
+    } catch {}
+    runBuild();
+  });
+}
 const optDeboss = document.getElementById("opt-deboss");
 const optEdge = document.getElementById("opt-edge");
 const exportBtn = document.getElementById("export-step");
@@ -517,13 +548,14 @@ async function runBuild() {
       contour.push([Math.round(tool[i][0] * 1000) / 1000,
                     Math.round(tool[i][1] * 1000) / 1000]);
     }
-    // rev + deboss are injected at build time: the rev isn't a profile
-    // param, and the deboss toggle must not force a profile re-fit
+    // rev, deboss + magnets are injected at build time: none of them
+    // are profile params, so changing them must not force a re-fit
     const r = await cadApi.build(
       { segs: p.segs, periodic: p.periodic, layout: p.layout,
         center: p.center, pocketPts: p.pocketPts, contour },
       { ...p.params, rev: designRev,
-        deboss: { enabled: optDeboss.checked } });
+        deboss: { enabled: optDeboss.checked },
+        magnets: currentMagnets() });
     window.__bin = { ok: r.ok, depth: r.depth, H: r.H, bbox: r.bbox,
       logs: r.logs, ms: r.ms };
     showMesh(r.mesh.positions, r.mesh.indices, r.bbox.dims);
@@ -537,7 +569,7 @@ async function runBuild() {
   }
 }
 binThickness.addEventListener("change", runProfile);
-optMagnets.addEventListener("change", runProfile);
+optMagnets.addEventListener("change", runBuild);
 optDeboss.addEventListener("change", runBuild);
 optEdge.addEventListener("change", runProfile);
 
@@ -603,6 +635,11 @@ async function reviseFromStep(file) {
     optFlat.checked = !!p.flat_faithful;
     customScallops = Array.isArray(p.scallops) ? p.scallops : null;
     optMagnets.checked = !!(p.magnets && p.magnets.enabled);
+    if (p.magnets && p.magnets.r) {
+      magOd.value = (2 * p.magnets.r - 0.15).toFixed(2).replace(/\.?0+$/, "");
+      magH.value = (p.magnets.depth - 0.1).toFixed(2).replace(/\.?0+$/, "");
+      clampMag(magOd); clampMag(magH);
+    }
     optDeboss.checked = !(p.deboss && p.deboss.enabled === false);
     optEdge.value = (p.edge && p.edge.style) || "";
     scanStatus.textContent = `revising '${design.name}' from its embedded ` +

@@ -59,17 +59,40 @@
             <option value="letter" selected>letter (US)</option>
             <option value="a4">A4</option>
           </select></label>
-        <div class="sub">sets the mm scale when you shoot on a plain
-          sheet; ignored when the template is detected</div>
+        <div class="sub"><ul>
+          <li>sets the mm scale when you shoot on a plain sheet</li>
+          <li>ignored when the template is detected</li>
+        </ul></div>
       </div>
       <div class="optrow">
         <label><input type="checkbox" id="opt-fine"> fine detail
           (slower)</label>
-        <div class="sub">scans at 20 px/mm instead of 12, roughly 3×
-          slower. Worth it only for very snug fits (clearance near 0,
-          smoothness low) or when the STEP goes somewhere finer than an
-          FDM printer (resin, CNC) — for a normal printed bin the
-          default already out-resolves the printer</div>
+        <div class="sub"><ul>
+          <li>scans at 20 px/mm instead of 12 — roughly 3× slower</li>
+          <li>worth it for very snug fits (clearance near 0, smoothness
+            low) or when the STEP goes somewhere finer than an FDM
+            printer (resin, CNC)</li>
+          <li>for a normal printed bin the default already out-resolves
+            the printer</li>
+        </ul></div>
+      </div>
+      <div class="optrow">
+        <label>name <input type="text" id="bin-name" size="14"></label>
+        <div class="sub"><ul>
+          <li>part name — goes in the filename and the STEP&rsquo;s part
+            name</li>
+          <li>pre-filled from the photo&rsquo;s filename</li>
+        </ul></div>
+      </div>
+      <div class="optrow">
+        <label>tool thickness <input type="number" id="bin-thickness"
+          value="25" min="1" max="60" step="0.5" style="width:4.5em"> mm</label>
+        <div class="sub"><ul>
+          <li>sets the pocket depth — measure the tool at its thickest</li>
+          <li>bin height rounds up in 7 mm Gridfinity units, always
+            keeping a &ge;5 mm floor (very thick tools sit a little
+            proud)</li>
+        </ul></div>
       </div>
       <div id="scan-status" class="hint"></div>
     </section>
@@ -91,22 +114,28 @@
       <div class="optrow">
         <label><input type="checkbox" id="opt-strict" checked> guarantee
           clearance everywhere</label>
-        <div class="sub">the pocket is never closer to the tool than the
-          clearance below, at every point — smoothing may only bow
-          outward. Off: smoothing can cut tight corners slightly closer
-          (you&rsquo;ll get a warning if it does)</div>
+        <div class="sub"><ul>
+          <li>the pocket is never closer to the tool than the clearance
+            below, at every point — smoothing may only bow outward</li>
+          <li>off: smoothing can cut tight corners slightly closer
+            (you&rsquo;ll get a warning if it does)</li>
+        </ul></div>
       </div>
       <div class="optrow">
         <label><input type="checkbox" id="opt-flat"> flat faithful</label>
-        <div class="sub">straight tool edges stay straight (within
-          ~0.3 mm) instead of bowing outward with high smoothness —
-          corners still round per the smoothness setting</div>
+        <div class="sub"><ul>
+          <li>straight tool edges stay straight (within ~0.3 mm)
+            instead of bowing outward with high smoothness</li>
+          <li>corners still round per the smoothness setting</li>
+        </ul></div>
       </div>
       <div class="optrow">
         <label><input type="checkbox" id="opt-symmetric" checked> symmetric</label>
-        <div class="sub">mirrors the pocket across the tool&rsquo;s symmetry
-          axis — evens out lighting artifacts on symmetric tools; turn
-          off for genuinely asymmetric ones</div>
+        <div class="sub"><ul>
+          <li>mirrors the pocket across the tool&rsquo;s symmetry axis —
+            evens out lighting artifacts on symmetric tools</li>
+          <li>turn off for genuinely asymmetric ones</li>
+        </ul></div>
       </div>
       <div id="sliders">
         <label class="slrow">clearance
@@ -125,17 +154,21 @@
           <input type="range" id="sl-scallop" min="0" max="40" step="1"
             value="25">
           <span class="val"><span id="v-scallop">25</span> mm</span></label>
-        <div class="sub">finger scallops at the tool&rsquo;s left and right
-          ends (blue dots in the preview) so you can lift it out —
-          0 removes them; drag the blue dots in the preview to
-          reposition them</div>
+        <div class="sub"><ul>
+          <li>finger scallops at the tool&rsquo;s left and right ends so
+            you can lift it out — 0 removes them</li>
+          <li>drag the blue dots in the preview to reposition them</li>
+        </ul></div>
         <label class="slrow">min wall
           <input type="range" id="sl-wall" min="1.8" max="8" step="0.1"
             value="3">
           <span class="val"><span id="v-wall">3.0</span> mm</span></label>
-        <div class="sub">thinnest allowed material between the pocket and
-          the bin&rsquo;s outside — the bin grows a 42 mm cell when the pocket
-          would get too close</div>
+        <div class="sub"><ul>
+          <li>thinnest allowed material between the pocket and the
+            bin&rsquo;s outside</li>
+          <li>the bin grows a 42 mm cell when the pocket would get too
+            close</li>
+        </ul></div>
       </div>
       <div id="profile-status" class="hint"></div>
     </section>
@@ -149,32 +182,36 @@
     <section id="bin" style="display:none">
       <h2>4 · Bin</h2>
       <div class="optrow">
-        <label>name <input type="text" id="bin-name" size="14"></label>
-        <div class="sub">part name — goes in the filename and the STEP&rsquo;s
-          part name</div>
-      </div>
-      <div class="optrow">
         <label>filename prefix <input type="text" id="bin-prefix" size="9"></label>
-        <div class="sub">in front of every exported filename (remembered
-          on this device; clear it if you don&rsquo;t want one)</div>
+        <div class="sub"><ul>
+          <li>in front of every exported filename</li>
+          <li>remembered on this device; clear it if you don&rsquo;t want
+            one</li>
+        </ul></div>
       </div>
       <div class="optrow">
-        <label>tool thickness <input type="number" id="bin-thickness"
-          value="25" min="1" max="60" step="0.5" style="width:4.5em"> mm</label>
-        <div class="sub">sets the pocket depth; bin height rounds up in
-          7 mm Gridfinity units and always keeps a &ge;5 mm floor (very
-          thick tools sit a little proud)</div>
-      </div>
-      <div class="optrow">
-        <label><input type="checkbox" id="opt-magnets" checked> magnets</label>
-        <div class="sub">pockets for 6&times;2 mm magnets under all four
-          corners of every 42 mm foot, with a chamfered press-fit
-          entry</div>
+        <label><input type="checkbox" id="opt-magnets" checked> magnets
+          &#8960; <input type="number" id="mag-od" value="6" min="3"
+            max="6.5" step="0.05" style="width:4.2em">
+          &times; <input type="number" id="mag-h" value="2" min="0.5"
+            max="2.9" step="0.1" style="width:4.2em"> mm</label>
+        <div class="sub"><ul>
+          <li>pockets under all four corners of every 42 mm foot, with a
+            chamfered press-fit entry</li>
+          <li>size is the magnet itself (&#8960; &times; thickness); the
+            pocket adds 0.15 / 0.1 mm press-fit allowance</li>
+          <li>limits keep the Gridfinity foot printable: &#8960; up to
+            6.5 mm, thickness up to 2.9 mm (remembered on this
+            device)</li>
+        </ul></div>
       </div>
       <div class="optrow">
         <label><input type="checkbox" id="opt-deboss" checked> rev deboss</label>
-        <div class="sub">the revision (R01, R02, …) debossed 0.4 mm into
-          the underside — reads when you flip the bin over</div>
+        <div class="sub"><ul>
+          <li>the revision (R01, R02, …) debossed 0.4 mm into the
+            underside</li>
+          <li>reads when you flip the bin over</li>
+        </ul></div>
       </div>
       <div class="optrow">
         <label>edge
@@ -182,8 +219,11 @@
             <option value="chamfer" selected>chamfer</option>
             <option value="">square</option>
           </select></label>
-        <div class="sub">1 mm chamfer on the rim and the pocket entry
-          (easier tool drop-in), or sharp square edges</div>
+        <div class="sub"><ul>
+          <li>1 mm chamfer on the rim and the pocket entry — easier
+            tool drop-in</li>
+          <li>or sharp square edges</li>
+        </ul></div>
       </div>
       <div id="bin-status" class="hint"></div>
       <div><button id="export-step" disabled>&#11015; Download STEP</button></div>
