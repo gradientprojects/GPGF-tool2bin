@@ -180,6 +180,7 @@ async function scanPhoto(file) {
   window.__contour = null;
   window.__profile = null;
   window.__bin = null;
+  customScallops = null; // fresh tool, fresh auto-placement
   binName.value = file.name.replace(/\.[^.]+$/, "");
   designRev = 1;
   try {
@@ -233,6 +234,9 @@ const optMax = document.getElementById("opt-max-contour");
 const optStrict = document.getElementById("opt-strict");
 
 let lastProfileDraw = null; // redrawn on resize at the new display size
+let profView = null;        // mm<->canvas transform of the last draw
+let customScallops = null;  // user-dragged scallop centers (worker override)
+let dragIdx = -1, dragScallops = null; // in-progress drag
 function drawProfile(toolMm, r) {
   lastProfileDraw = [toolMm, r];
   // backing resolution follows the CSS display box, sharp on hidpi
@@ -255,6 +259,7 @@ function drawProfile(toolMm, r) {
   const s = Math.min(Wc / (x1 - x0 + 10), Hc / (y1 - y0 + 10));
   const tx = (x) => (x - (x0 + x1) / 2) * s + Wc / 2;
   const ty = (y) => Hc / 2 - (y - (y0 + y1) / 2) * s; // +Y up
+  profView = { s, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, Wc, Hc };
   const poly = (pts, stroke, fill) => {
     ctx.beginPath();
     pts.forEach(([x, y], i) => {
@@ -266,12 +271,78 @@ function drawProfile(toolMm, r) {
   };
   poly(r.pocketPts, "#ff7a30", "rgba(255,122,48,0.12)");
   poly(toolMm, "#9aa7b5", "rgba(154,167,181,0.25)");
-  for (const [sx, sy] of r.scallops) {
+  const scallopD = +sliders.scallop.value;
+  const dots = dragScallops || r.scallops;
+  if (scallopD > 0 && dots) dots.forEach(([sx, sy], i) => {
+    ctx.setLineDash([4 * dpr, 4 * dpr]);
     ctx.beginPath();
-    ctx.arc(tx(sx), ty(sy), 4 * dpr, 0, Math.PI * 2);
+    ctx.arc(tx(sx), ty(sy), (scallopD / 2) * s, 0, Math.PI * 2);
+    ctx.strokeStyle = dragIdx === i ? "#8ec5ff" : "rgba(77,163,255,0.6)";
+    ctx.lineWidth = 1 * dpr;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(tx(sx), ty(sy), 5 * dpr, 0, Math.PI * 2);
     ctx.fillStyle = "#4da3ff"; ctx.fill();
-  }
+  });
 }
+
+// ---- draggable scallops (ported from the PoC UI) ---------------------------
+function snapToFit(pt) {
+  const fit = lastProfileDraw[1].fit;
+  let best = Infinity, bi = 0;
+  for (let i = 0; i < fit.length; i++) {
+    const d = Math.hypot(fit[i][0] - pt[0], fit[i][1] - pt[1]);
+    if (d < best) { best = d; bi = i; }
+  }
+  return [fit[bi][0], fit[bi][1]];
+}
+
+function pointerMm(e) {
+  const rect = profileCnv.getBoundingClientRect();
+  const k = profView.Wc / rect.width; // CSS px -> backing px
+  const px = (e.clientX - rect.left) * k, py = (e.clientY - rect.top) * k;
+  return { px, py, k,
+           mm: [(px - profView.Wc / 2) / profView.s + profView.cx,
+                profView.cy + (profView.Hc / 2 - py) / profView.s] };
+}
+
+profileCnv.addEventListener("pointerdown", (e) => {
+  const r = lastProfileDraw && lastProfileDraw[1];
+  if (!r || !r.scallops || !r.scallops.length || +sliders.scallop.value <= 0 ||
+      !profView) return;
+  const { px, py, k } = pointerMm(e);
+  const hit = 14 * k; // 14 CSS px, like the PoC
+  dragIdx = r.scallops.findIndex(([sx, sy]) => {
+    const dx = (sx - profView.cx) * profView.s + profView.Wc / 2 - px;
+    const dy = profView.Hc / 2 - (sy - profView.cy) * profView.s - py;
+    return Math.hypot(dx, dy) < hit;
+  });
+  if (dragIdx < 0) return;
+  dragScallops = r.scallops.map((p) => p.slice());
+  profileCnv.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+profileCnv.addEventListener("pointermove", (e) => {
+  if (dragIdx < 0) return;
+  const p = snapToFit(pointerMm(e).mm);
+  dragScallops[dragIdx] = p;
+  // the other scallop mirrors across the symmetry axis (x = 0), as in
+  // the PoC — contours arrive centered from pose normalization
+  if (dragScallops.length > 1) {
+    dragScallops[1 - dragIdx] = snapToFit([-p[0], p[1]]);
+  }
+  drawProfile(...lastProfileDraw);
+});
+const endDrag = (e) => {
+  if (dragIdx < 0) return;
+  customScallops = dragScallops;
+  dragIdx = -1; dragScallops = null;
+  try { profileCnv.releasePointerCapture(e.pointerId); } catch {}
+  runProfile();
+};
+profileCnv.addEventListener("pointerup", endDrag);
+profileCnv.addEventListener("pointercancel", endDrag);
 
 const sliders = {};
 for (const [id, label] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
@@ -279,11 +350,20 @@ for (const [id, label] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
   const el = document.getElementById(`sl-${id}`);
   const lbl = document.getElementById(label);
   el.addEventListener("input", () => { lbl.textContent = el.value; });
-  el.addEventListener("change", () => runProfile());
+  el.addEventListener("change", () => {
+    // smoothness reshapes the base outline -> dragged spots go stale
+    if (id === "smooth") customScallops = null;
+    runProfile();
+  });
   sliders[id] = el;
 }
 const optSymmetric = document.getElementById("opt-symmetric");
-optSymmetric.addEventListener("change", () => runProfile());
+optSymmetric.addEventListener("change", () => {
+  customScallops = null; // mirrored outline moves the auto spots
+  runProfile();
+});
+const optFlat = document.getElementById("opt-flat");
+optFlat.addEventListener("change", () => runProfile());
 
 function currentParams() {
   return {
@@ -296,6 +376,8 @@ function currentParams() {
     symmetric: optSymmetric.checked,
     max_contour: optMax.checked,
     strict_contain: optStrict.checked,
+    flat_faithful: optFlat.checked,
+    scallops: customScallops || undefined,
     magnets: { enabled: optMagnets.checked,
                r: 3.075, depth: 2.1, chamfer: 0.5 },
     edge: optEdge.value ? { style: optEdge.value, size: 1.0 } : {},
@@ -518,6 +600,8 @@ async function reviseFromStep(file) {
     if (p.scallop_d != null) sliders.scallop.value = p.scallop_d;
     if (p.min_wall != null) sliders.wall.value = p.min_wall;
     optSymmetric.checked = p.symmetric !== false;
+    optFlat.checked = !!p.flat_faithful;
+    customScallops = Array.isArray(p.scallops) ? p.scallops : null;
     optMagnets.checked = !!(p.magnets && p.magnets.enabled);
     optDeboss.checked = !(p.deboss && p.deboss.enabled === false);
     optEdge.value = (p.edge && p.edge.style) || "";

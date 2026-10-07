@@ -46,6 +46,26 @@ function minClearanceOf(c, poly, pts) {
   return worst;
 }
 
+/** max signed distance (mm) of pts beyond the polygon boundary */
+function maxBulgeOf(c, poly, pts) {
+  const { mask, origin } = rasterize(c, poly, 12.0);
+  const sd = sdf(c, mask);
+  const H = mask.rows, W = mask.cols;
+  mask.delete();
+  let worst = -Infinity;
+  for (const [x, y] of pts) {
+    const r = (y - origin[1]) * PX, cc = (x - origin[0]) * PX;
+    const r0 = Math.max(0, Math.min(H - 2, Math.floor(r)));
+    const c0 = Math.max(0, Math.min(W - 2, Math.floor(cc)));
+    const fr = r - r0, fc = cc - c0;
+    const i00 = r0 * W + c0;
+    const v = (sd[i00] * (1 - fr) * (1 - fc) + sd[i00 + 1] * (1 - fr) * fc +
+               sd[i00 + W] * fr * (1 - fc) + sd[i00 + W + 1] * fr * fc) / PX;
+    if (v > worst) worst = v;
+  }
+  return worst;
+}
+
 const PARAMS = { thickness: 25, clearance: 1.0, smooth_r: 8.0, min_wall: 3.0,
                  scallop_d: 25.0, scallop_blend: 4.0, symmetric: false };
 
@@ -102,4 +122,49 @@ test("max_contour: pocket ignores the concave notch and clears the hull", async 
     return Math.abs(a2 / 2);
   };
   expect(area(r.pocketPts)).toBeGreaterThan(area(base.pocketPts) + 1);
+});
+
+// Custom scallop centers (draggable dots in the UI): the worker uses
+// the passed positions instead of auto-placement and echoes them back.
+test("params.scallops overrides auto placement and still clears", async () => {
+  test.setTimeout(240000);
+  const c = await cvReady();
+  const auto = profileResponse(c, tool, PARAMS);
+  // move both scallops to the top edge of the auto fit
+  const topY = auto.fit.reduce((m, p) => Math.max(m, p[1]), -Infinity);
+  const pick = (sx) => auto.fit.reduce((b, p) =>
+    Math.abs(p[1] - topY) < 2 && Math.abs(p[0] - sx) < Math.abs(b[0] - sx)
+      ? p : b, [Infinity, 0]);
+  const custom = [pick(-20), pick(20)];
+  const r = profileResponse(c, tool, { ...PARAMS, scallops: custom });
+  expect(r.scallops).toEqual(custom);
+  expect(r.scallops).not.toEqual(auto.scallops);
+  const mc = minClearanceOf(c, tool, r.pocketPts);
+  console.log(`custom-scallop min clearance: ${mc.toFixed(4)} mm`);
+  expect(mc).toBeGreaterThanOrEqual(PARAMS.clearance - 0.05 - 1e-6);
+});
+
+// flat_faithful: along the long straight edges of a rectangle the
+// pocket must stay within ~0.3 mm of the true offset; without the flag
+// the accepted smoothing rung bows the flats visibly. Corner regions
+// are exempt (containment inflation overshoots there by design), so
+// the metric samples only the mid-edge stretch.
+test("flat_faithful: flats stay flat on a rectangle tool", async () => {
+  test.setTimeout(240000);
+  const c = await cvReady();
+  const rect = [[-70, -10], [70, -10], [70, 10], [-70, 10]];
+  const P = { thickness: 25, clearance: 1.0, smooth_r: 8.0, min_wall: 3.0,
+              scallop_d: 0, scallop_blend: 4.0, symmetric: false };
+  const onFlats = (pts) =>
+    pts.filter(([x, y]) => Math.abs(x) <= 55 && Math.abs(y) >= 5);
+  const loose = profileResponse(c, rect, P);
+  const flat = profileResponse(c, rect, { ...P, flat_faithful: true });
+  const bulgeLoose = maxBulgeOf(c, rect, onFlats(loose.pocketPts)) - P.clearance;
+  const bulgeFlat = maxBulgeOf(c, rect, onFlats(flat.pocketPts)) - P.clearance;
+  console.log(`rectangle flat-edge bulge: default ${bulgeLoose.toFixed(3)} mm, ` +
+              `flat_faithful ${bulgeFlat.toFixed(3)} mm`);
+  expect(bulgeFlat).toBeLessThanOrEqual(0.35);
+  expect(bulgeLoose).toBeGreaterThan(0.4); // the flag has something to fix
+  const mc = minClearanceOf(c, rect, flat.pocketPts);
+  expect(mc).toBeGreaterThanOrEqual(P.clearance - 0.05 - 1e-6);
 });

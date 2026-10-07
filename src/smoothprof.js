@@ -265,7 +265,30 @@ export function addScallops(c, basePts, scallops, d, blend = 4.0, log = () => {}
   return { tck, pts };
 }
 
-export function smoothProfile(c, contourMm, clearance, radius, log = () => {}) {
+/** 1 where the closed outline is locally straight: total turn over a
+ *  ±windowMm arc stays under maxTurnDeg. Corner arcs and their flanks
+ *  come out 0. */
+function straightMask(q, windowMm = 2.0, maxTurnDeg = 6) {
+  const n = q.length;
+  const k = Math.max(1, Math.round(windowMm / RESAMPLE));
+  const mask = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = q[((i - k) % n + n) % n], b = q[(i + k) % n];
+    const v1x = q[i][0] - a[0], v1y = q[i][1] - a[1];
+    const v2x = b[0] - q[i][0], v2y = b[1] - q[i][1];
+    const ang = Math.abs(Math.atan2(v1x * v2y - v1y * v2x,
+                                    v1x * v2x + v1y * v2y));
+    mask[i] = ang <= maxTurnDeg * Math.PI / 180 ? 1 : 0;
+  }
+  return mask;
+}
+
+/** flatCap (app-side "flat faithful"): extra acceptance gate capping
+ *  the fit's deviation along STRAIGHT stretches of the outline. The
+ *  reference's global OUT_CAP stays; corners, where the containment
+ *  inflation legitimately overshoots, are exempt. */
+export function smoothProfile(c, contourMm, clearance, radius, log = () => {},
+                              flatCap = Infinity) {
   const margin = clearance + radius + OUT_CAP + 5.0;
   const { mask, origin } = rasterize(c, contourMm, margin);
   const sdTool = sdf(c, mask);
@@ -308,9 +331,11 @@ export function smoothProfile(c, contourMm, clearance, radius, log = () => {}) {
   const cMm = ccw(cPx.map(([x, y]) => [x / PX + origin[0], y / PX + origin[1]]));
   const q = resampleClosed(cMm, RESAMPLE);
   const treeQ = new GridNN(q, 1.0);
+  const straight = Number.isFinite(flatCap) ? straightMask(q) : null;
 
   let chosen = null;
   let tck = null, pts = null, mc = -Infinity, devOut = Infinity, multUsed = 0;
+  let devFlat = 0;
   for (const mult of [3000, 1000, 300, 100, 30, 10, 3, 1, 0.3, 0.1, 0.03]) {
     let qw = q.map((p) => [p[0], p[1]]);
     multUsed = mult;
@@ -320,10 +345,11 @@ export function smoothProfile(c, contourMm, clearance, radius, log = () => {}) {
       const sdv = sdAt(pts);
       mc = Infinity;
       for (const v of sdv) if (v < mc) mc = v;
-      devOut = 0;
+      devOut = 0; devFlat = 0;
       for (const [x, y] of pts) {
-        const dd = treeQ.query(x, y).dist;
-        if (dd > devOut) devOut = dd;
+        const { idx, dist } = treeQ.query(x, y);
+        if (dist > devOut) devOut = dist;
+        if (straight && straight[idx] && dist > devFlat) devFlat = dist;
       }
       if (mc >= clearance - CONTAIN_TOL) break;
       // inflate: push data outward where the curve intrudes
@@ -341,8 +367,10 @@ export function smoothProfile(c, contourMm, clearance, radius, log = () => {}) {
       qw = qw.map((p, i) => [p[0] + g[i][0] * sm[i] * 2.0,
                              p[1] + g[i][1] * sm[i] * 2.0]);
     }
-    if (mc >= clearance - CONTAIN_TOL && devOut <= OUT_CAP) {
+    if (mc >= clearance - CONTAIN_TOL && devOut <= OUT_CAP &&
+        devFlat <= flatCap) {
       chosen = { tck, pts, mc, mult, devOut };
+      if (straight) log(`flat faithful: flats within ${devFlat.toFixed(2)} mm`);
       break;
     }
   }

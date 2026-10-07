@@ -8,6 +8,11 @@
 //                    tool+clearance outline, guaranteeing containment
 //                    even where the reference accepts a non-converged
 //                    smooth fit.
+//   flatFaithful   — extra smooth-fit acceptance gate: along straight
+//                    stretches of the outline the curve must stay
+//                    within 0.3 mm (corners exempt — the containment
+//                    inflation overshoots there by design), so flat
+//                    tool edges stay flat on a lower smoothing rung.
 import {
   symmetrizeContour, offsetContour, smoothProfile, addScallops,
   periodicFit, rasterize, sdf, fillMask, bbox, PX, LAM_BASE,
@@ -39,9 +44,10 @@ export function convexHull(pts) {
   return [...lo.slice(0, -1), ...hi.slice(0, -1)];
 }
 
-export function computeProfile(c, cMm, clearance, smoothR, log = () => {}) {
+export function computeProfile(c, cMm, clearance, smoothR, log = () => {},
+                               flatCap = Infinity) {
   if (smoothR > 0) {
-    const r = smoothProfile(c, cMm, clearance, smoothR, log);
+    const r = smoothProfile(c, cMm, clearance, smoothR, log, flatCap);
     return { segs: [r.tck], periodic: true, fit: r.fit,
              extra: { minClearance: r.minClearance } };
   }
@@ -217,7 +223,8 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     cSrc = symmetrizeContour(c, cSrc);
     log("symmetric cutout: mirrored union across centerline");
   }
-  const prof = computeProfile(c, cSrc, clearance, smoothR, log);
+  const prof = computeProfile(c, cSrc, clearance, smoothR, log,
+    params.flat_faithful ? 0.3 : Infinity);
   const scallops = params.scallops || autoScallops(prof.fit);
 
   let cutSegs = prof.segs, cutPeriodic = prof.periodic, pocketPts = prof.fit;

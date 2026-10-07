@@ -97,6 +97,12 @@
           (you&rsquo;ll get a warning if it does)</div>
       </div>
       <div class="optrow">
+        <label><input type="checkbox" id="opt-flat"> flat faithful</label>
+        <div class="sub">straight tool edges stay straight (within
+          ~0.3 mm) instead of bowing outward with high smoothness —
+          corners still round per the smoothness setting</div>
+      </div>
+      <div class="optrow">
         <label><input type="checkbox" id="opt-symmetric" checked> symmetric</label>
         <div class="sub">mirrors the pocket across the tool&rsquo;s symmetry
           axis — evens out lighting artifacts on symmetric tools; turn
@@ -121,7 +127,8 @@
           <span class="val"><span id="v-scallop">25</span> mm</span></label>
         <div class="sub">finger scallops at the tool&rsquo;s left and right
           ends (blue dots in the preview) so you can lift it out —
-          0 removes them</div>
+          0 removes them; drag the blue dots in the preview to
+          reposition them</div>
         <label class="slrow">min wall
           <input type="range" id="sl-wall" min="1.8" max="8" step="0.1"
             value="3">

@@ -73,3 +73,4 @@ select, input[type=text], input[type=number] {
 .pane canvas { display:block; width:100%; height:auto; border-radius:8px;
                object-fit:contain; }
 #bin-view { aspect-ratio:4 / 3; }
+#profile-view { touch-action:none; } /* scallop dots are draggable */
