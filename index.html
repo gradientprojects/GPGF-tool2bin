@@ -37,10 +37,16 @@
 
     <section id="scan">
       <h2>2 · Scan a tool</h2>
-      <label class="filebtn">
-        <input type="file" id="photo" accept="image/*" capture="environment">
-        &#128247; Take / choose a photo
-      </label>
+      <div class="filerow">
+        <label class="filebtn">
+          <input type="file" id="photo" accept="image/*" capture="environment">
+          &#128247; Take / choose a photo
+        </label>
+        <label class="filebtn alt">
+          <input type="file" id="stepfile" accept=".step,.stp">
+          &#128194; Load STEP to revise
+        </label>
+      </div>
       <ul class="hint">
         <li>Lay the tool on the sheet; on a phone the button opens the
           camera. You can also drag a photo anywhere on this page.</li>
@@ -77,7 +83,7 @@
         </ul></div>
       </div>
       <div class="optrow">
-        <label>name <input type="text" id="bin-name" size="14"></label>
+        <label class="namerow">name <input type="text" id="bin-name"></label>
         <div class="sub"><ul>
           <li>part name — goes in the filename and the STEP&rsquo;s part
             name</li>
@@ -238,7 +244,14 @@
         next export uprevs itself (R01 &rarr; R02).</p>
     </section>
     <div class="pane" id="pane-bin" style="display:none">
-      <h2>3D preview <span class="opt">(drag to orbit)</span></h2>
+      <h2>3D preview <span class="opt">(drag to orbit &middot; n =
+        nearest ortho view)</span></h2>
+      <div class="viewrow">
+        <button class="pv" data-view="iso">iso</button>
+        <button class="pv" data-view="top">top</button>
+        <button class="pv" data-view="front">front</button>
+        <button class="pv" data-view="right">right</button>
+      </div>
       <canvas id="bin-view" width="560" height="420"></canvas>
     </div>
     </div>

@@ -181,6 +181,7 @@ async function scanPhoto(file) {
   window.__profile = null;
   window.__bin = null;
   customScallops = null; // fresh tool, fresh auto-placement
+  if (three) three.placed = false; // new design: reframe the 3D view
   designRev = 1;
   try {
     const imageData = await fileToImageData(file);
@@ -465,6 +466,10 @@ const optDeboss = document.getElementById("opt-deboss");
 const optEdge = document.getElementById("opt-edge");
 const exportBtn = document.getElementById("export-step");
 
+// 3D viewer, ported from the PoC: z-up ortho camera, OrbitControls,
+// preset ortho views, n-to-nearest-view snap, bbox-fit zoom. The
+// camera survives rebuilds (deboss/magnet toggles) and only reframes
+// on a fresh scan or import.
 let three = null;
 function threeView() {
   if (three) return three;
@@ -472,16 +477,97 @@ function threeView() {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio || 1);
   const scene = new THREE.Scene();
-  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 2000);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.2));
-  const dir = new THREE.DirectionalLight(0xffffff, 1.1);
-  dir.position.set(1, -1.2, 1.8);
-  scene.add(dir);
+  const cam = new THREE.OrthographicCamera(-100, 100, 100, -100, -4000, 4000);
+  cam.up.set(0, 0, 1); // z-up, like the geometry
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3f46, 1.1));
+  const key = new THREE.DirectionalLight(0xffffff, 1.8);
+  key.position.set(0.5, -1, 1.5);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.5);
+  fill.position.set(-1, 0.6, 0.8);
+  scene.add(fill);
   const controls = new OrbitControls(cam, canvas);
   controls.addEventListener("change", () => renderer.render(scene, cam));
-  three = { renderer, scene, cam, controls, mesh: null };
+  three = { renderer, scene, cam, controls, mesh: null,
+            viewHalf: 100, bbox: null, placed: false };
   return three;
 }
+
+function applyFrustum() {
+  const t = three;
+  const canvas = t.renderer.domElement;
+  const w = canvas.clientWidth || 560, h = canvas.clientHeight || 420;
+  const asp = w / Math.max(1, h);
+  t.cam.left = -t.viewHalf * asp; t.cam.right = t.viewHalf * asp;
+  t.cam.top = t.viewHalf; t.cam.bottom = -t.viewHalf;
+  t.cam.updateProjectionMatrix();
+  t.renderer.setSize(w, h, false);
+}
+
+function fitZoom() { // zoom so the mesh bbox fills ~90% of the pane
+  const t = three;
+  if (!t.bbox) return;
+  t.cam.updateMatrixWorld(true);
+  const inv = t.cam.matrixWorldInverse;
+  const lo = new THREE.Vector3(Infinity, Infinity, Infinity);
+  const hi = lo.clone().negate();
+  for (let i = 0; i < 8; i++) {
+    const p = new THREE.Vector3(i & 1 ? t.bbox.max.x : t.bbox.min.x,
+                                i & 2 ? t.bbox.max.y : t.bbox.min.y,
+                                i & 4 ? t.bbox.max.z : t.bbox.min.z)
+      .applyMatrix4(inv);
+    lo.min(p); hi.max(p);
+  }
+  t.cam.zoom = 0.9 * Math.min((t.cam.right - t.cam.left) / (hi.x - lo.x),
+                              (t.cam.top - t.cam.bottom) / (hi.y - lo.y));
+  t.cam.updateProjectionMatrix();
+}
+
+// head-on orthographic views; top gets an epsilon tilt so the view
+// direction never parallels up=(0,0,1)
+const VIEW_DIRS = { iso: [1, -1, 1], top: [0, -1e-4, 1],
+                    front: [0, -1, 0], right: [1, 0, 0] };
+function setView(name) {
+  const t = three;
+  if (!t || !t.mesh) return;
+  const d = new THREE.Vector3(...VIEW_DIRS[name]).normalize()
+    .multiplyScalar(t.viewHalf * 4);
+  t.cam.position.copy(t.controls.target).add(d);
+  applyFrustum();
+  t.controls.update();
+  fitZoom();
+  t.renderer.render(t.scene, t.cam);
+}
+
+// n snaps to whichever of the 6 axis-aligned ortho views is closest
+function snapNormal() {
+  const t = three;
+  if (!t || !t.mesh) return;
+  const d = t.cam.position.clone().sub(t.controls.target).normalize();
+  let best = null, bd = -2;
+  for (const v of [[1, 0, 0], [-1, 0, 0], [0, 1, 0],
+                   [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+    const dot = d.x * v[0] + d.y * v[1] + d.z * v[2];
+    if (dot > bd) { bd = dot; best = v; }
+  }
+  const dir = new THREE.Vector3(...best);
+  if (Math.abs(dir.z) > 0.99) dir.y = -1e-4 * Math.sign(dir.z);
+  dir.normalize().multiplyScalar(three.viewHalf * 4);
+  t.cam.position.copy(t.controls.target).add(dir);
+  applyFrustum();
+  t.controls.update();
+  fitZoom();
+  t.renderer.render(t.scene, t.cam);
+}
+
+document.querySelectorAll(".pv").forEach((b) =>
+  b.addEventListener("click", () => setView(b.dataset.view)));
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "n" && e.key !== "N") return;
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return;
+  snapNormal();
+});
 
 function showMesh(positions, indices, size) {
   const t = threeView();
@@ -496,30 +582,18 @@ function showMesh(positions, indices, size) {
   });
   t.mesh = new THREE.Mesh(geo, mat);
   t.scene.add(t.mesh);
-  const m = Math.max(size[0], size[1], size[2]) * 0.72;
-  t.viewM = m; // kept for resize: camera extents rebuild from it
-  t.cam.position.set(m, -m, m);
-  t.cam.up.set(0, 0, 1);
   geo.computeBoundingBox();
-  const c = geo.boundingBox.getCenter(new THREE.Vector3());
-  t.cam.lookAt(c);
-  t.controls.target.copy(c);
-  fitThreeViewport();
-}
-
-/** Size the renderer from the canvas's CSS box (the pane fixes a 4:3
- *  aspect) and rebuild the ortho frustum; renders when a mesh exists. */
-function fitThreeViewport() {
-  const t = three;
-  if (!t) return;
-  const canvas = t.renderer.domElement;
-  const w = canvas.clientWidth || 560, h = canvas.clientHeight || 420;
-  const m = t.viewM || 1;
-  const aspect = w / h;
-  Object.assign(t.cam, { left: -m * aspect, right: m * aspect, top: m, bottom: -m });
-  t.cam.updateProjectionMatrix();
-  t.renderer.setSize(w, h, false);
-  if (t.mesh) t.renderer.render(t.scene, t.cam);
+  t.bbox = geo.boundingBox;
+  t.viewHalf = Math.max(size[0], size[1], size[2]) * 0.72;
+  t.controls.target.copy(t.bbox.getCenter(new THREE.Vector3()));
+  if (!t.placed) {
+    t.placed = true;
+    setView("iso"); // first build of a design: frame it
+  } else {
+    applyFrustum(); // rebuild (deboss/magnets/...): keep the user's view
+    t.controls.update();
+    t.renderer.render(t.scene, t.cam);
+  }
 }
 
 let resizeTimer = 0;
@@ -527,7 +601,10 @@ window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     if (lastProfileDraw) drawProfile(...lastProfileDraw);
-    fitThreeViewport();
+    if (three && three.mesh) {
+      applyFrustum();
+      three.renderer.render(three.scene, three.cam);
+    }
   }, 150);
 });
 
@@ -559,9 +636,14 @@ async function runBuild() {
     window.__bin = { ok: r.ok, depth: r.depth, H: r.H, bbox: r.bbox,
       logs: r.logs, ms: r.ms };
     showMesh(r.mesh.positions, r.mesh.indices, r.bbox.dims);
+    // surface build warnings (e.g. "rim chamfer failed; stays square")
+    // that previously lived only in the hidden log
+    const warns = (r.logs || []).filter((l) => l.includes("WARNING"))
+      .map((l) => l.replace(/^WARNING:\s*/, ""));
     binStatus.textContent =
       `solid ${r.bbox.dims.map((v) => v.toFixed(1)).join("×")} mm, ` +
-      `pocket depth ${r.depth} mm (${(r.ms / 1000).toFixed(1)}s)`;
+      `pocket depth ${r.depth} mm (${(r.ms / 1000).toFixed(1)}s)` +
+      (warns.length ? ` — ⚠ ${warns.join("; ")}` : "");
     exportBtn.disabled = false;
   } catch (e) {
     window.__bin = { ok: false, error: String(e) };
@@ -623,6 +705,7 @@ async function reviseFromStep(file) {
     if (!design.contour) throw new Error("design has no contour (old export?)");
     window.__warp = null;
     window.__contour = { ok: true, contourMm: design.contour, fromStep: true };
+    if (three) three.placed = false; // new design: reframe the 3D view
     binName.value = design.name || "tool";
     designRev = (design.rev || 1) + 1;
     const p = design.params || {};
@@ -688,6 +771,10 @@ function handleFile(file) {
 document.getElementById("photo").addEventListener("change", (e) => {
   handleFile(e.target.files[0]);
   e.target.value = ""; // same file re-picked later must fire again
+});
+document.getElementById("stepfile").addEventListener("change", (e) => {
+  handleFile(e.target.files[0]);
+  e.target.value = "";
 });
 document.addEventListener("dragover", (e) => e.preventDefault());
 document.addEventListener("drop", (e) => {
