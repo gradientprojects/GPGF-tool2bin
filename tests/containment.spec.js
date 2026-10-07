@@ -58,6 +58,29 @@ test("strict_contain: pocket clears the tool everywhere", async () => {
   expect(mc).toBeGreaterThanOrEqual(PARAMS.clearance - 0.05 - 1e-6);
 });
 
+// Regression: a tall tool whose 25 mm scallop lobes reach past the
+// tool bbox + the union canvas margin. The union canvas used to be
+// sized from the tool alone; the clipped pocket shattered the union
+// contour at the canvas border and the refit produced a pocket that
+// cut off the bottom half of the tool (min clearance -9.4 mm).
+test("strict_contain: scallop lobes past the tool bbox stay on canvas", async () => {
+  test.setTimeout(240000);
+  const c = await cvReady();
+  const tall = JSON.parse(
+    fs.readFileSync(path.join(FIX, "tall_tool.json"), "utf8")).tool;
+  const r = profileResponse(c, tall, { thickness: 25, clearance: 1.5,
+    smooth_r: 0, min_wall: 3.0, scallop_d: 25.0, scallop_blend: 4.0,
+    symmetric: true, strict_contain: true });
+  const mc = minClearanceOf(c, tall, r.pocketPts);
+  console.log(`tall-tool strict min clearance: ${mc.toFixed(4)} mm`);
+  expect(mc).toBeGreaterThanOrEqual(1.3);
+  const y = (pts) => pts.reduce((m, p) => [Math.min(m[0], p[1]),
+    Math.max(m[1], p[1])], [Infinity, -Infinity]);
+  const [ty0, ty1] = y(tall), [py0, py1] = y(r.pocketPts);
+  expect(py0).toBeLessThan(ty0);
+  expect(py1).toBeGreaterThan(ty1);
+});
+
 test("max_contour: pocket ignores the concave notch and clears the hull", async () => {
   test.setTimeout(240000);
   const c = await cvReady();

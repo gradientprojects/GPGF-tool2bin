@@ -16,7 +16,7 @@ export const RESAMPLE = 0.25;
 export const KNOT_MM = 3.0;
 export const LAM_BASE = 3e-7;
 
-function bbox(pts) {
+export function bbox(pts) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [x, y] of pts) {
     if (x < x0) x0 = x; if (y < y0) y0 = y;
@@ -37,7 +37,7 @@ function polyMat(c, pts, origin, scale) {
 /** cv2.fillPoly of mm polygons into a fresh 0/1 CV_8UC1 mask.
  *  One fillPoly call PER polygon: a single call with several contours
  *  fills even-odd, turning overlaps into holes (reference loops too). */
-function fillMask(c, h, w, polys, origin) {
+export function fillMask(c, h, w, polys, origin) {
   const mask = c.Mat.zeros(h, w, c.CV_8UC1);
   for (const p of polys) {
     const m = polyMat(c, p, origin, PX);

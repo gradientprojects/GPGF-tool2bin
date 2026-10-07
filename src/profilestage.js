@@ -10,7 +10,7 @@
 //                    smooth fit.
 import {
   symmetrizeContour, offsetContour, smoothProfile, addScallops,
-  periodicFit, rasterize, sdf, PX, LAM_BASE,
+  periodicFit, rasterize, sdf, fillMask, bbox, PX, LAM_BASE,
 } from "./smoothprof.js";
 import { evalPeriodic } from "./bspline.js";
 import { resample, detectCorners, fitProfile, sampleSegs } from "./profilefit.js";
@@ -94,9 +94,16 @@ export function autoScallops(fitPts) {
 /** strictContain post-pass: union the pocket with tool+clearance, refit. */
 function containmentUnion(c, pocketPts, toolMm, clearance, log) {
   const margin = clearance + 8.0;
-  const { mask, origin } = rasterize(c, toolMm, margin);
+  // the canvas must cover the pocket as well as the tool: scallop lobes
+  // reach well past the tool bbox, and a pocket clipped at the canvas
+  // edge shatters the union contour into open border fragments that the
+  // periodic refit then closes into garbage
+  const b = bbox([...toolMm, ...pocketPts]);
+  const origin = [b.x0 - margin, b.y0 - margin];
+  const W = Math.trunc((b.x1 - b.x0 + 2 * margin) * PX) + 2;
+  const H = Math.trunc((b.y1 - b.y0 + 2 * margin) * PX) + 2;
+  const mask = fillMask(c, H, W, [toolMm], origin);
   const sdTool = sdf(c, mask);
-  const H = mask.rows, W = mask.cols;
   mask.delete();
   // worst intrusion of the pocket into the clearance zone
   let worst = Infinity;
@@ -115,9 +122,6 @@ function containmentUnion(c, pocketPts, toolMm, clearance, log) {
   }
   if (worst >= clearance - 0.05) return null; // already contained
   // union raster: pocket polygon OR sd <= clearance
-  const pocketMask = rasterize(c, pocketPts, margin);
-  // same canvas: re-rasterize pocket on the TOOL's canvas
-  pocketMask.mask.delete();
   const { mask: pm } = (() => {
     const m = c.Mat.zeros(H, W, c.CV_8UC1);
     const flat = new Int32Array(pocketPts.length * 2);
@@ -182,6 +186,13 @@ function containmentUnion(c, pocketPts, toolMm, clearance, log) {
     // the refit itself must not reintroduce intrusion
     if (dev <= 0.15 && minSd >= clearance - 0.05) break;
   }
+  // never hand back something worse than the pocket we were given
+  if (minSd < worst) {
+    log(`WARNING: strict containment refit went wrong (min clearance ` +
+        `${minSd.toFixed(2)} mm vs ${worst.toFixed(2)} mm before); ` +
+        `keeping the unfixed pocket`);
+    return { failed: true };
+  }
   log(`strict containment: pocket unioned with tool+clearance ` +
       `(was ${(clearance - worst).toFixed(2)} mm short), refit dev ` +
       `${dev.toFixed(3)} mm, min clearance ${minSd.toFixed(3)} mm`);
@@ -214,13 +225,17 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     const s = addScallops(c, prof.fit, scallops, scallopD, scallopBlend, log);
     cutSegs = [s.tck]; cutPeriodic = true; pocketPts = s.pts;
   }
+  const warnings = [];
   if (params.strict_contain) {
     const fixed = containmentUnion(c, pocketPts, cMm, clearance, log);
-    if (fixed) { cutSegs = [fixed.tck]; cutPeriodic = true; pocketPts = fixed.pts; }
+    if (fixed && fixed.failed) {
+      warnings.push("containment fix-up failed -- lower scallop/clearance or re-scan");
+    } else if (fixed) {
+      cutSegs = [fixed.tck]; cutPeriodic = true; pocketPts = fixed.pts;
+    }
   }
 
   const L = layout(pocketPts, thickness, minWall);
-  const warnings = [];
   if (L.proud > 0) {
     warnings.push(`pocket depth clamped; tool sits ${L.proud.toFixed(1)} mm proud`);
   }
