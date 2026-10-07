@@ -3,7 +3,32 @@
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--fg);
        font:16px -apple-system, Helvetica, sans-serif; }
-main { max-width:680px; margin:0 auto; padding:28px 16px; }
+main { max-width:680px; margin:0 auto; padding:28px 16px;
+       display:flex; flex-direction:column; }
+
+/* narrow: the two wrappers dissolve and panes interleave with their
+   sections, reproducing the single-column phone flow */
+#controls, #previews { display:contents; }
+#template { order:1; } #scan { order:2; } #pane-warp { order:3; }
+#pocket { order:4; } #pane-profile { order:5; } #bin { order:6; }
+#pane-bin { order:7; } #checks { order:8; }
+
+/* wide: controls left, previews in a sticky right column */
+@media (min-width: 1000px) {
+  main { display:grid; max-width:1440px;
+         grid-template-columns:minmax(400px, 480px) minmax(0, 1fr);
+         column-gap:24px; align-items:start; }
+  h1, .tag { grid-column:1 / -1; }
+  #controls { display:block; grid-column:1; }
+  #previews { display:flex; flex-direction:column; grid-column:2;
+              position:sticky; top:16px;
+              max-height:calc(100vh - 32px); overflow-y:auto; }
+  /* newest stage on top, heights capped so it's actually in view */
+  #pane-bin { order:1; } #pane-profile { order:2; } #pane-warp { order:3; }
+  #bin-view { max-height:52vh; }
+  #profile-view { max-height:34vh; }
+  #warp-preview { max-height:38vh; }
+}
 h1 { font-size:24px; margin:0 0 4px; }
 .tag { color:var(--dim); margin:0 0 24px; }
 section { background:var(--panel); border-radius:10px; padding:16px 18px;
@@ -49,5 +74,11 @@ select, input[type=text], input[type=number] {
            transition:width .25s ease; }
 @keyframes barslide { from { margin-left:-30%; } to { margin-left:100%; } }
 
-#warp-preview { display:block; margin-top:12px; max-width:100%;
-                border-radius:8px; }
+/* preview panes: canvas display size is CSS-driven (the renderer reads
+   clientWidth/Height — an unstyled canvas would feed its own dpr-scaled
+   backing size back in and grow without bound) */
+.pane { background:var(--panel); border-radius:10px; padding:16px 18px;
+        margin-bottom:16px; }
+.pane canvas { display:block; width:100%; height:auto; border-radius:8px;
+               object-fit:contain; }
+#bin-view { aspect-ratio:4 / 3; }

@@ -16,6 +16,7 @@
     <p class="tag">Photo of a tool &rarr; Gridfinity bin STEP. Everything runs in
       your browser &mdash; photos never leave your device.</p>
 
+    <div id="controls">
     <section id="template">
       <h2>1 · Grab a sheet of paper <span class="opt">(template optional)</span></h2>
       <ul class="hint">
@@ -69,7 +70,6 @@
           can reproduce</div>
       </div>
       <div id="scan-status" class="hint"></div>
-      <canvas id="warp-preview" style="display:none"></canvas>
     </section>
 
     <section id="pocket" style="display:none">
@@ -123,7 +123,6 @@
           would get too close</div>
       </div>
       <div id="profile-status" class="hint"></div>
-      <canvas id="profile-view" width="560" height="420"></canvas>
     </section>
 
     <section id="bin" style="display:none">
@@ -166,7 +165,6 @@
           (easier tool drop-in), or sharp square edges</div>
       </div>
       <div id="bin-status" class="hint"></div>
-      <canvas id="bin-view" width="560" height="420"></canvas>
       <div><button id="export-step" disabled>&#11015; Download STEP</button></div>
       <p class="hint">The STEP carries its own design: drop an exported
         .step back onto this page to revise it (no photo needed) — the
@@ -181,6 +179,22 @@
         Vision (OpenCV + ArUco): <b class="st">loading…</b></div>
       <pre id="caps"></pre>
     </section>
+    </div>
+
+    <aside id="previews">
+      <div class="pane" id="pane-warp" style="display:none">
+        <h2>Scan</h2>
+        <canvas id="warp-preview"></canvas>
+      </div>
+      <div class="pane" id="pane-profile" style="display:none">
+        <h2>Pocket profile</h2>
+        <canvas id="profile-view" width="560" height="420"></canvas>
+      </div>
+      <div class="pane" id="pane-bin" style="display:none">
+        <h2>3D preview <span class="opt">(drag to orbit)</span></h2>
+        <canvas id="bin-view" width="560" height="420"></canvas>
+      </div>
+    </aside>
   </main>
   <script type="module" src="./src/main.js"></script>
 </body>

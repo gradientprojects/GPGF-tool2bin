@@ -118,6 +118,9 @@ async function cvCheck() {
 // ---- scan: photo -> warp preview -------------------------------------------
 const scanStatus = document.getElementById("scan-status");
 const previewCnv = document.getElementById("warp-preview");
+const paneWarp = document.getElementById("pane-warp");
+const paneProfile = document.getElementById("pane-profile");
+const paneBin = document.getElementById("pane-bin");
 
 /** in-progress status: message + progress bar + elapsed seconds. The
  *  bar cycles until the returned updater reports a real fraction, then
@@ -195,7 +198,7 @@ async function scanPhoto(file) {
     const ctx = previewCnv.getContext("2d");
     previewCnv.width = r.preview.width; previewCnv.height = r.preview.height;
     ctx.putImageData(r.preview, 0, 0);
-    previewCnv.style.display = "block";
+    paneWarp.style.display = "block";
     const warpLine = r.mode === "template"
       ? `template '${r.page}': ${r.nMarkers} markers, ` +
         `${r.inliers}/${r.total} corner inliers (${(r.ms / 1000).toFixed(1)}s)`
@@ -229,7 +232,17 @@ const profileCnv = document.getElementById("profile-view");
 const optMax = document.getElementById("opt-max-contour");
 const optStrict = document.getElementById("opt-strict");
 
+let lastProfileDraw = null; // redrawn on resize at the new display size
 function drawProfile(toolMm, r) {
+  lastProfileDraw = [toolMm, r];
+  // backing resolution follows the CSS display box, sharp on hidpi
+  const dpr = window.devicePixelRatio || 1;
+  const cw = profileCnv.clientWidth || 560;
+  const ch = profileCnv.clientHeight || Math.round(cw * 0.75);
+  const W = Math.round(cw * dpr), H = Math.round(ch * dpr);
+  if (profileCnv.width !== W || profileCnv.height !== H) {
+    profileCnv.width = W; profileCnv.height = H;
+  }
   const ctx = profileCnv.getContext("2d");
   const Wc = profileCnv.width, Hc = profileCnv.height;
   ctx.clearRect(0, 0, Wc, Hc);
@@ -249,13 +262,13 @@ function drawProfile(toolMm, r) {
     });
     ctx.closePath();
     if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2 * dpr; ctx.stroke(); }
   };
   poly(r.pocketPts, "#ff7a30", "rgba(255,122,48,0.12)");
   poly(toolMm, "#9aa7b5", "rgba(154,167,181,0.25)");
   for (const [sx, sy] of r.scallops) {
     ctx.beginPath();
-    ctx.arc(tx(sx), ty(sy), 4, 0, Math.PI * 2);
+    ctx.arc(tx(sx), ty(sy), 4 * dpr, 0, Math.PI * 2);
     ctx.fillStyle = "#4da3ff"; ctx.fill();
   }
 }
@@ -293,6 +306,7 @@ async function runProfile() {
   const cres = window.__contour;
   if (!cres || !cres.ok) return;
   profileSec.style.display = "block";
+  paneProfile.style.display = "block";
   busyStatus(profileStatus, "fitting pocket profile…");
   try {
     const params = currentParams();
@@ -369,25 +383,46 @@ function showMesh(positions, indices, size) {
   });
   t.mesh = new THREE.Mesh(geo, mat);
   t.scene.add(t.mesh);
-  const canvas = t.renderer.domElement;
   const m = Math.max(size[0], size[1], size[2]) * 0.72;
-  const aspect = canvas.clientWidth / canvas.clientHeight || 4 / 3;
-  Object.assign(t.cam, { left: -m * aspect, right: m * aspect, top: m, bottom: -m });
+  t.viewM = m; // kept for resize: camera extents rebuild from it
   t.cam.position.set(m, -m, m);
   t.cam.up.set(0, 0, 1);
   geo.computeBoundingBox();
   const c = geo.boundingBox.getCenter(new THREE.Vector3());
   t.cam.lookAt(c);
   t.controls.target.copy(c);
-  t.cam.updateProjectionMatrix();
-  t.renderer.setSize(canvas.clientWidth || 560, canvas.clientHeight || 420, false);
-  t.renderer.render(t.scene, t.cam);
+  fitThreeViewport();
 }
+
+/** Size the renderer from the canvas's CSS box (the pane fixes a 4:3
+ *  aspect) and rebuild the ortho frustum; renders when a mesh exists. */
+function fitThreeViewport() {
+  const t = three;
+  if (!t) return;
+  const canvas = t.renderer.domElement;
+  const w = canvas.clientWidth || 560, h = canvas.clientHeight || 420;
+  const m = t.viewM || 1;
+  const aspect = w / h;
+  Object.assign(t.cam, { left: -m * aspect, right: m * aspect, top: m, bottom: -m });
+  t.cam.updateProjectionMatrix();
+  t.renderer.setSize(w, h, false);
+  if (t.mesh) t.renderer.render(t.scene, t.cam);
+}
+
+let resizeTimer = 0;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (lastProfileDraw) drawProfile(...lastProfileDraw);
+    fitThreeViewport();
+  }, 150);
+});
 
 async function runBuild() {
   const p = window.__profile;
   if (!p || !p.ok) return;
   binSec.style.display = "block";
+  paneBin.style.display = "block";
   exportBtn.disabled = true;
   busyStatus(binStatus, "building bin solid…");
   try {
