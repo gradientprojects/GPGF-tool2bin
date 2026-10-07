@@ -24,6 +24,8 @@ async function runChain(page, photo, fine = false) {
   await page.goto("/");
   if (fine) await page.check("#opt-fine");
   await page.setInputFiles("#photo", path.join(PHOTOS, photo));
+  await page.fill("#bin-thickness", "25");
+  await page.click("#start-scan");
   await expect
     .poll(async () => page.evaluate(() => window.__bin), { timeout: 560000 })
     .not.toBeNull();

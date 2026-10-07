@@ -47,6 +47,8 @@ test.describe("stage-6 CAD parity: STEP exports vs reference kernel", () => {
     test.setTimeout(600000);
     await page.goto("/");
     await page.setInputFiles("#photo", path.join(POC, "snips-closed.JPG"));
+    await page.fill("#bin-thickness", "25");
+    await page.click("#start-scan");
     await expect
       .poll(async () => page.evaluate(() => window.__bin), { timeout: 580000 })
       .not.toBeNull();

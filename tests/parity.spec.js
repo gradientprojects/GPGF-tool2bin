@@ -50,6 +50,8 @@ test.describe("stage-1 warp parity vs oracle", () => {
       // the oracle ran at 20 px/mm; "fine detail" restores it in the UI
       await page.check("#opt-fine");
       await page.setInputFiles("#photo", path.join(POC, d.photo));
+      await page.fill("#bin-thickness", "25");
+      await page.click("#start-scan");
       await expect
         .poll(async () => page.evaluate(() => window.__warp), { timeout: 200000 })
         .not.toBeNull();

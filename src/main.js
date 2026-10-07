@@ -181,7 +181,6 @@ async function scanPhoto(file) {
   window.__profile = null;
   window.__bin = null;
   customScallops = null; // fresh tool, fresh auto-placement
-  binName.value = file.name.replace(/\.[^.]+$/, "");
   designRev = 1;
   try {
     const imageData = await fileToImageData(file);
@@ -430,11 +429,12 @@ let designRev = 1;
 const binThickness = document.getElementById("bin-thickness");
 const optMagnets = document.getElementById("opt-magnets");
 
-// magnet size (the magnet itself; the pocket adds 0.15/0.1 mm press
-// fit). Ranges keep the Gridfinity foot printable: the pocket + 0.5 mm
-// chamfer must leave ~1 mm of foot wall (centers at +-13 on a 35.6 mm
-// foot bottom), and the cut must leave >= 2 mm above the magnet under
-// the 5 mm minimum floor. Per-device convenience like the prefix.
+// magnet POCKET dimensions as cut (the user includes their own
+// press-fit allowance; 6x2 magnet -> 6.15 x 2.1). Ranges keep the
+// Gridfinity foot printable: pocket + 0.5 mm chamfer must leave ~1 mm
+// of foot wall (centers at +-13 on a 35.6 mm foot bottom), and the cut
+// must leave >= 2 mm of floor above it under the 5 mm minimum floor.
+// Per-device convenience like the prefix.
 const magOd = document.getElementById("mag-od");
 const magH = document.getElementById("mag-h");
 const clampMag = (el) => {
@@ -442,21 +442,21 @@ const clampMag = (el) => {
   el.value = Math.min(+el.max, Math.max(+el.min, isFinite(v) ? v : +el.min));
 };
 try {
-  magOd.value = localStorage.getItem("t2b.magod") ?? "6";
-  magH.value = localStorage.getItem("t2b.magh") ?? "2";
+  magOd.value = localStorage.getItem("t2b.pocketod") ?? "6.15";
+  magH.value = localStorage.getItem("t2b.pocketd") ?? "2.1";
 } catch {}
 clampMag(magOd); clampMag(magH);
 function currentMagnets() {
   return { enabled: optMagnets.checked,
-           r: (+magOd.value + 0.15) / 2,
-           depth: +magH.value + 0.1, chamfer: 0.5 };
+           r: +magOd.value / 2,
+           depth: +magH.value, chamfer: 0.5 };
 }
 for (const el of [magOd, magH]) {
   el.addEventListener("change", () => {
     clampMag(el);
     try {
-      localStorage.setItem("t2b.magod", magOd.value);
-      localStorage.setItem("t2b.magh", magH.value);
+      localStorage.setItem("t2b.pocketod", magOd.value);
+      localStorage.setItem("t2b.pocketd", magH.value);
     } catch {}
     runBuild();
   });
@@ -636,8 +636,8 @@ async function reviseFromStep(file) {
     customScallops = Array.isArray(p.scallops) ? p.scallops : null;
     optMagnets.checked = !!(p.magnets && p.magnets.enabled);
     if (p.magnets && p.magnets.r) {
-      magOd.value = (2 * p.magnets.r - 0.15).toFixed(2).replace(/\.?0+$/, "");
-      magH.value = (p.magnets.depth - 0.1).toFixed(2).replace(/\.?0+$/, "");
+      magOd.value = (2 * p.magnets.r).toFixed(2).replace(/\.?0+$/, "");
+      magH.value = (+p.magnets.depth).toFixed(2).replace(/\.?0+$/, "");
       clampMag(magOd); clampMag(magH);
     }
     optDeboss.checked = !(p.deboss && p.deboss.enabled === false);
@@ -650,14 +650,45 @@ async function reviseFromStep(file) {
   }
 }
 
+// name + thickness gate: a photo is held until both are entered (the
+// PoC asked in a modal before scanning; here the fields live in the
+// scan step). STEP re-imports bypass it — they carry their own design.
+let pendingPhoto = null;
+const scanGate = document.getElementById("scan-gate");
+const startScan = document.getElementById("start-scan");
+const gateOk = () => cleanName(binName.value).length > 0 &&
+  +binThickness.value >= 1 && +binThickness.value <= 60;
+const gateUpdate = () => { startScan.disabled = !gateOk(); };
+binName.addEventListener("input", gateUpdate);
+binThickness.addEventListener("input", gateUpdate);
+function gatePhoto(file) {
+  pendingPhoto = file;
+  binName.value = file.name.replace(/\.[^.]+$/, "");
+  binThickness.value = "";
+  scanGate.style.display = "block";
+  gateUpdate();
+  scanStatus.textContent = "photo loaded — confirm the name, enter the " +
+    "tool's thickness, and start the scan";
+  binThickness.focus();
+}
+startScan.addEventListener("click", () => {
+  if (!pendingPhoto || !gateOk()) return;
+  const f = pendingPhoto;
+  pendingPhoto = null;
+  scanGate.style.display = "none";
+  scanPhoto(f);
+});
+
 function handleFile(file) {
   if (!file) return;
   if (/\.ste?p$/i.test(file.name)) return reviseFromStep(file);
-  return scanPhoto(file);
+  return gatePhoto(file);
 }
 
-document.getElementById("photo").addEventListener("change",
-  (e) => handleFile(e.target.files[0]));
+document.getElementById("photo").addEventListener("change", (e) => {
+  handleFile(e.target.files[0]);
+  e.target.value = ""; // same file re-picked later must fire again
+});
 document.addEventListener("dragover", (e) => e.preventDefault());
 document.addEventListener("drop", (e) => {
   e.preventDefault();

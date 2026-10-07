@@ -86,13 +86,19 @@
       </div>
       <div class="optrow">
         <label>tool thickness <input type="number" id="bin-thickness"
-          value="25" min="1" max="60" step="0.5" style="width:4.5em"> mm</label>
+          min="1" max="60" step="0.5" style="width:4.5em"> mm</label>
         <div class="sub"><ul>
           <li>sets the pocket depth — measure the tool at its thickest</li>
+          <li>required before the scan starts</li>
           <li>bin height rounds up in 7 mm Gridfinity units, always
             keeping a &ge;5 mm floor (very thick tools sit a little
             proud)</li>
         </ul></div>
+      </div>
+      <div class="optrow" id="scan-gate" style="display:none">
+        <button id="start-scan" disabled>&#9654; Start scan</button>
+        <div class="sub">photo is loaded — confirm the name and enter
+          the tool&rsquo;s thickness above, then start</div>
       </div>
       <div id="scan-status" class="hint"></div>
     </section>
@@ -190,19 +196,19 @@
         </ul></div>
       </div>
       <div class="optrow">
-        <label><input type="checkbox" id="opt-magnets" checked> magnets
-          &#8960; <input type="number" id="mag-od" value="6" min="3"
-            max="6.5" step="0.05" style="width:4.2em">
-          &times; <input type="number" id="mag-h" value="2" min="0.5"
-            max="2.9" step="0.1" style="width:4.2em"> mm</label>
+        <label><input type="checkbox" id="opt-magnets" checked> magnet
+          pocket &#8960; <input type="number" id="mag-od" value="6.15"
+            min="3" max="6.8" step="0.05" style="width:4.6em">
+          &times; <input type="number" id="mag-h" value="2.1" min="0.6"
+            max="3" step="0.05" style="width:4.2em"> mm</label>
         <div class="sub"><ul>
           <li>pockets under all four corners of every 42 mm foot, with a
-            chamfered press-fit entry</li>
-          <li>size is the magnet itself (&#8960; &times; thickness); the
-            pocket adds 0.15 / 0.1 mm press-fit allowance</li>
+            0.5 mm chamfered entry</li>
+          <li>these are the POCKET dimensions as cut — include your own
+            press-fit allowance (e.g. a 6&times;2 mm magnet &rarr;
+            6.15 &times; 2.1)</li>
           <li>limits keep the Gridfinity foot printable: &#8960; up to
-            6.5 mm, thickness up to 2.9 mm (remembered on this
-            device)</li>
+            6.8 mm, depth up to 3 mm (remembered on this device)</li>
         </ul></div>
       </div>
       <div class="optrow">

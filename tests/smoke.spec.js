@@ -35,6 +35,8 @@ test("warps the synthetic template end-to-end (CI-safe)", async ({ page }) => {
   await page.goto("/");
   await page.setInputFiles("#photo",
     path.resolve(import.meta.dirname, "../public/fixtures/synthetic-letter.png"));
+  await page.fill("#bin-thickness", "25");
+  await page.click("#start-scan");
   await expect
     .poll(async () => page.evaluate(() => window.__warp), { timeout: 150000 })
     .not.toBeNull();
