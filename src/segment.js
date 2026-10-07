@@ -248,20 +248,30 @@ export function segment(c, warpRgba, field, pxmm, log = () => {}, tick = () => {
     const md = main8.data;
     for (let p = 0; p < Wc * Hc; p++) md[p] = lv[p] === mainI ? 1 : 0;
   }
-  // re-attach substantial satellites within ~2 mm of the main component
+  // re-attach substantial satellites within ~2 mm of the main component.
+  // The proximity dilate (ellipse kernel ~4*pxmm wide, full canvas,
+  // non-decomposable) costs seconds, and `touched` only matters for
+  // components that pass the >= 100 mm^2 bar — so when no such
+  // component exists (the usual single-tool scan) both are skipped.
   const kSize = (Math.trunc(4 * pxmm) | 1);
   const ker4 = c.getStructuringElement(c.MORPH_ELLIPSE, new c.Size(kSize, kSize));
-  const near = new c.Mat();
-  c.dilate(main8, near, ker4);
-  const touched = new Uint8Array(nLbl);
-  {
-    const nd = near.data;
-    for (let p = 0; p < Wc * Hc; p++) if (nd[p] && lv[p] > 0) touched[lv[p]] = 1;
-  }
-  near.delete();
-  const sats = [];
+  let anyBig = false;
   for (let i = 1; i < nLbl; i++) {
-    if (i !== mainI && area(i) / (pxmm * pxmm) >= 100 && touched[i]) sats.push(i);
+    if (i !== mainI && area(i) / (pxmm * pxmm) >= 100) { anyBig = true; break; }
+  }
+  const sats = [];
+  if (anyBig) {
+    const near = new c.Mat();
+    c.dilate(main8, near, ker4);
+    const touched = new Uint8Array(nLbl);
+    {
+      const nd = near.data;
+      for (let p = 0; p < Wc * Hc; p++) if (nd[p] && lv[p] > 0) touched[lv[p]] = 1;
+    }
+    near.delete();
+    for (let i = 1; i < nLbl; i++) {
+      if (i !== mainI && area(i) / (pxmm * pxmm) >= 100 && touched[i]) sats.push(i);
+    }
   }
   if (sats.length) {
     log(`re-attached ${sats.length} satellite part(s) ` +
