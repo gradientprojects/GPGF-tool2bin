@@ -76,6 +76,16 @@ test("strict_contain: pocket clears the tool everywhere", async () => {
   const mc = minClearanceOf(c, tool, r.pocketPts);
   console.log(`strict_contain min clearance: ${mc.toFixed(4)} mm`);
   expect(mc).toBeGreaterThanOrEqual(PARAMS.clearance - 0.05 - 1e-6);
+  // regression: the union refit must come out CCW — a CW pocket
+  // inverted the pocket-entry flare's outward normals and shipped
+  // bins with no chamfer on the pocket edge
+  let a2 = 0;
+  for (let i = 0; i < r.pocketPts.length; i++) {
+    const j = (i + 1) % r.pocketPts.length;
+    a2 += r.pocketPts[i][0] * r.pocketPts[j][1] -
+          r.pocketPts[i][1] * r.pocketPts[j][0];
+  }
+  expect(a2).toBeGreaterThan(0);
 });
 
 // Regression: a tall tool whose 25 mm scallop lobes reach past the

@@ -15,7 +15,7 @@
 //                    tool edges stay flat on a lower smoothing rung.
 import {
   symmetrizeContour, offsetContour, smoothProfile, addScallops,
-  periodicFit, rasterize, sdf, fillMask, bbox, PX, LAM_BASE,
+  periodicFit, rasterize, sdf, fillMask, bbox, ccw, PX, LAM_BASE,
 } from "./smoothprof.js";
 import { evalPeriodic } from "./bspline.js";
 import { resample, detectCorners, fitProfile, sampleSegs } from "./profilefit.js";
@@ -155,7 +155,11 @@ function containmentUnion(c, pocketPts, toolMm, clearance, log) {
   const cs = findContours(sdU, H, W, 0.0);
   let bestC = cs[0];
   for (const cc of cs) if (cc.length > bestC.length) bestC = cc;
-  let poly = bestC.map(([r, col]) => [col / PX + origin[0], r / PX + origin[1]]);
+  // marching squares emits either winding; every other path normalizes
+  // to CCW and downstream normal-offset code (pocket entry flare)
+  // depends on it — a CW refit here shipped bins with no pocket chamfer
+  let poly = ccw(
+    bestC.map(([r, col]) => [col / PX + origin[0], r / PX + origin[1]]));
   // light refit so the result is a spline again (tight cap, like scallops)
   const step = 0.2;
   const q = [];

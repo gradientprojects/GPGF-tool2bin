@@ -337,12 +337,34 @@ function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log) {
   if (periodic) {
     const { C, k } = segs[0];
     const n = C.length;
+    // Pole normals over a ~2.5 mm baseline, not adjacent poles: dense
+    // refit tcks (1.25 mm knots after scallops / strict containment)
+    // carry high-frequency wiggle in the control polygon, and
+    // neighbor-difference normals then point erratically — the offset
+    // wire folds inside the wall and the flare cuts nothing there
+    // (live bug: chamfer missing on most of a smooth-0 pocket).
+    let perim = 0;
+    for (let i = 0; i < n; i++) {
+      const p0 = C[i], p1 = C[(i + 1) % n];
+      perim += Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+    }
+    const span = Math.max(1, Math.min(Math.round(2.5 / (perim / n)),
+                                      Math.floor(n / 8)));
+    // (dy,-dx) is outward only for CCW polygons; flip with the actual
+    // winding (a CW tck once turned the flare inside out — it landed
+    // wholly inside the pocket prism and cut nothing)
+    let a2 = 0;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      a2 += C[i][0] * C[j][1] - C[i][1] * C[j][0];
+    }
+    const sgn = a2 >= 0 ? 1 : -1;
     const nrmP = [];
     for (let i = 0; i < n; i++) {
-      const p0 = C[(i - 1 + n) % n], p1 = C[(i + 1) % n];
+      const p0 = C[(i - span + n) % n], p1 = C[(i + span) % n];
       const dx = p1[0] - p0[0], dy = p1[1] - p0[1];
       const l = Math.hypot(dx, dy) || 1e-9;
-      nrmP.push([dy / l, -dx / l]); // outward for CCW
+      nrmP.push([(dy / l) * sgn, (-dx / l) * sgn]);
     }
     mkWire = (off, z) => {
       const C2 = C.map((p, i) => [p[0] + nrmP[i][0] * off, p[1] + nrmP[i][1] * off]);
@@ -360,8 +382,14 @@ function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log) {
     const stride = Math.max(1, Math.trunc(pocketPts.length / 1500));
     const q0 = [];
     for (let i = 0; i < pocketPts.length; i += stride) q0.push(pocketPts[i]);
+    let a2 = 0;
+    for (let i = 0; i < q0.length; i++) {
+      const j = (i + 1) % q0.length;
+      a2 += q0[i][0] * q0[j][1] - q0[i][1] * q0[j][0];
+    }
+    const sgn = a2 >= 0 ? 1 : -1; // outward flips with winding, as above
     const t = wrapTangents(q0);
-    const nrm = t.map(([tx, ty]) => [ty, -tx]); // outward for CCW
+    const nrm = t.map(([tx, ty]) => [ty * sgn, -tx * sgn]);
     mkWire = (off, z) => {
       if (off === 0) return profileWire(oc, segs, periodic, z);
       const q = q0.map((p, i) => [p[0] + nrm[i][0] * off, p[1] + nrm[i][1] * off]);
