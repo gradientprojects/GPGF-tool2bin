@@ -5,14 +5,14 @@ body { margin:0; background:var(--bg); color:var(--fg);
        font:16px -apple-system, Helvetica, sans-serif; }
 main { max-width:680px; margin:0 auto; padding:28px 16px; }
 
-/* wide: the three working steps sit side by side, each preview pane
-   directly under its own controls (scan | pocket | bin); the template
-   intro and the self-test span the full width */
+/* wide: three step columns, each preview pane directly under its own
+   controls (template+scan | pocket | bin); only the page header spans.
+   The self-test auto-places under the first column, column-width. */
 @media (min-width: 1200px) {
   main { max-width:1520px;
          display:grid; grid-template-columns:repeat(3, minmax(0, 1fr));
          column-gap:20px; align-items:start; }
-  h1, .tag, #template, #checks { grid-column:1 / -1; }
+  h1, .tag { grid-column:1 / -1; }
   .pane canvas { max-height:56vh; }
 }
 h1 { font-size:24px; margin:0 0 4px; }
