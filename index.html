@@ -238,6 +238,10 @@
         </ul></div>
       </div>
       <div id="bin-status" class="hint"></div>
+      <details id="bin-log" style="display:none">
+        <summary>build log</summary>
+        <pre></pre>
+      </details>
       <div><button id="export-step" disabled>&#11015; Download STEP</button></div>
       <p class="hint">The STEP carries its own design: drop an exported
         .step back onto this page to revise it (no photo needed) — the
@@ -251,6 +255,8 @@
         <button class="pv" data-view="top">top</button>
         <button class="pv" data-view="front">front</button>
         <button class="pv" data-view="right">right</button>
+        <label class="pv edgetog"><input type="checkbox" id="opt-edges"
+          checked> edges</label>
       </div>
       <canvas id="bin-view" width="560" height="420"></canvas>
     </div>

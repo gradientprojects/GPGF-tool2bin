@@ -357,6 +357,15 @@ for (const [id, label] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
   });
   sliders[id] = el;
 }
+/** push slider values back into their value labels (imports set values
+ *  programmatically, which fires no input events) */
+function syncSliderLabels() {
+  for (const [id, lbl] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
+                           ["scallop", "v-scallop"], ["wall", "v-wall"]]) {
+    document.getElementById(lbl).textContent = sliders[id].value;
+  }
+}
+
 const optSymmetric = document.getElementById("opt-symmetric");
 optSymmetric.addEventListener("change", () => {
   customScallops = null; // mirrored outline moves the auto spots
@@ -560,8 +569,14 @@ function snapNormal() {
   t.renderer.render(t.scene, t.cam);
 }
 
-document.querySelectorAll(".pv").forEach((b) =>
+document.querySelectorAll(".pv[data-view]").forEach((b) =>
   b.addEventListener("click", () => setView(b.dataset.view)));
+const optViewEdges = document.getElementById("opt-edges");
+optViewEdges.addEventListener("change", () => {
+  if (!three || !three.edges) return;
+  three.edges.visible = optViewEdges.checked;
+  three.renderer.render(three.scene, three.cam);
+});
 window.addEventListener("keydown", (e) => {
   if (e.key !== "n" && e.key !== "N") return;
   const tag = (e.target.tagName || "").toLowerCase();
@@ -579,9 +594,17 @@ function showMesh(positions, indices, size) {
   const mat = new THREE.MeshStandardMaterial({
     color: 0xff7a30, metalness: 0.05, roughness: 0.65,
     flatShading: false, side: THREE.DoubleSide,
+    // pushed back slightly so the edge overlay draws cleanly on top
+    polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
   });
   t.mesh = new THREE.Mesh(geo, mat);
   t.scene.add(t.mesh);
+  if (t.edges) { t.scene.remove(t.edges); t.edges.geometry.dispose(); }
+  t.edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geo, 25),
+    new THREE.LineBasicMaterial({ color: 0x5c2d10 }));
+  t.edges.visible = optViewEdges.checked;
+  t.scene.add(t.edges);
   geo.computeBoundingBox();
   t.bbox = geo.boundingBox;
   t.viewHalf = Math.max(size[0], size[1], size[2]) * 0.72;
@@ -644,6 +667,9 @@ async function runBuild() {
       `solid ${r.bbox.dims.map((v) => v.toFixed(1)).join("×")} mm, ` +
       `pocket depth ${r.depth} mm (${(r.ms / 1000).toFixed(1)}s)` +
       (warns.length ? ` — ⚠ ${warns.join("; ")}` : "");
+    const logEl = document.getElementById("bin-log");
+    logEl.querySelector("pre").textContent = (r.logs || []).join("\n");
+    logEl.style.display = "block";
     exportBtn.disabled = false;
   } catch (e) {
     window.__bin = { ok: false, error: String(e) };
@@ -725,6 +751,7 @@ async function reviseFromStep(file) {
     }
     optDeboss.checked = !(p.deboss && p.deboss.enabled === false);
     optEdge.value = (p.edge && p.edge.style) || "";
+    syncSliderLabels(); // programmatic sets fire no input events
     scanStatus.textContent = `revising '${design.name}' from its embedded ` +
       `design (next export is R${String(designRev).padStart(2, "0")})`;
     await runProfile();
