@@ -16,7 +16,6 @@
     <p class="tag">Photo of a tool &rarr; Gridfinity bin STEP. Everything runs in
       your browser &mdash; photos never leave your device.</p>
 
-    <div id="controls">
     <section id="template">
       <h2>1 · Grab a sheet of paper <span class="opt">(template optional)</span></h2>
       <ul class="hint">
@@ -35,6 +34,7 @@
         A4 template</a>
     </section>
 
+    <div class="step">
     <section id="scan">
       <h2>2 · Scan a tool</h2>
       <label class="filebtn">
@@ -71,7 +71,13 @@
       </div>
       <div id="scan-status" class="hint"></div>
     </section>
+    <div class="pane" id="pane-warp" style="display:none">
+      <h2>Detected outline</h2>
+      <canvas id="warp-preview"></canvas>
+    </div>
+    </div>
 
+    <div class="step">
     <section id="pocket" style="display:none">
       <h2>3 · Pocket profile</h2>
       <div class="optrow">
@@ -124,7 +130,13 @@
       </div>
       <div id="profile-status" class="hint"></div>
     </section>
+    <div class="pane" id="pane-profile" style="display:none">
+      <h2>Pocket preview</h2>
+      <canvas id="profile-view" width="560" height="420"></canvas>
+    </div>
+    </div>
 
+    <div class="step">
     <section id="bin" style="display:none">
       <h2>4 · Bin</h2>
       <div class="optrow">
@@ -170,6 +182,11 @@
         .step back onto this page to revise it (no photo needed) — the
         next export uprevs itself (R01 &rarr; R02).</p>
     </section>
+    <div class="pane" id="pane-bin" style="display:none">
+      <h2>3D preview <span class="opt">(drag to orbit)</span></h2>
+      <canvas id="bin-view" width="560" height="420"></canvas>
+    </div>
+    </div>
 
     <section id="checks">
       <h2>Engine self-test</h2>
@@ -179,22 +196,6 @@
         Vision (OpenCV + ArUco): <b class="st">loading…</b></div>
       <pre id="caps"></pre>
     </section>
-    </div>
-
-    <aside id="previews">
-      <div class="pane" id="pane-warp" style="display:none">
-        <h2>Scan</h2>
-        <canvas id="warp-preview"></canvas>
-      </div>
-      <div class="pane" id="pane-profile" style="display:none">
-        <h2>Pocket profile</h2>
-        <canvas id="profile-view" width="560" height="420"></canvas>
-      </div>
-      <div class="pane" id="pane-bin" style="display:none">
-        <h2>3D preview <span class="opt">(drag to orbit)</span></h2>
-        <canvas id="bin-view" width="560" height="420"></canvas>
-      </div>
-    </aside>
   </main>
   <script type="module" src="./src/main.js"></script>
 </body>
