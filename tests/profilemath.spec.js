@@ -6,7 +6,7 @@ import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import cvPromise from "@techstark/opencv-js";
-import { gaussianFilter1d, mapCoordinatesBilinear } from "../src/nummath.js";
+import { gaussianFilter1d, mapCoordinatesBilinear, GridNN } from "../src/nummath.js";
 import { designMatrix, splev, evalPeriodic } from "../src/bspline.js";
 import {
   resample, detectCorners, fitProfile, sampleSegs, pspline, fitSegment,
@@ -173,4 +173,31 @@ test("cv chain: sdf / closing / offset / symmetrize / smooth / scallops", async 
   expect(sc.pts.length).toBe(f.scallops.pocket.length);
   expect(maxPtDiff(sc.pts, f.scallops.pocket)).toBeLessThan(1e-5);
   console.log("cv chain logs:", logs.join(" | "));
+});
+
+test("GridNN: exact argmin (lowest index on ties), near and far queries", () => {
+  let s = 12345; // deterministic LCG
+  const rnd = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 2 ** 32);
+  // an outline-like ring plus duplicates and a grid (exact distance ties)
+  const pts = [];
+  for (let i = 0; i < 1500; i++) {
+    const a = (i / 1500) * 2 * Math.PI;
+    pts.push([60 * Math.cos(a) + rnd() * 0.3, 25 * Math.sin(a) + rnd() * 0.3]);
+  }
+  for (let i = 0; i < 50; i++) pts.push(pts[Math.floor(rnd() * 1500)].slice());
+  for (let gx = -3; gx <= 3; gx++) for (let gy = -3; gy <= 3; gy++) pts.push([gx, gy]);
+  const tree = new GridNN(pts, 1.0);
+  const brute = (x, y) => {
+    let best = Infinity, bi = -1;
+    pts.forEach(([px, py], i) => {
+      const ex = px - x, ey = py - y, d2 = ex * ex + ey * ey;
+      if (d2 < best || (d2 === best && i < bi)) { best = d2; bi = i; }
+    });
+    return { dist: Math.sqrt(best), idx: bi };
+  };
+  const qs = [[0.5, 0.5], [0.5, 0], [0, 0], [500, -300]];
+  for (let i = 0; i < 3000; i++) qs.push([(rnd() - 0.5) * 200, (rnd() - 0.5) * 120]);
+  for (const p of pts.slice(0, 200)) qs.push(p);
+  for (const [x, y] of qs) expect(tree.query(x, y)).toEqual(brute(x, y));
+  expect(new GridNN([]).query(1, 2)).toEqual({ dist: Infinity, idx: -1 });
 });

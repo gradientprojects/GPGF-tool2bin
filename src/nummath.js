@@ -118,47 +118,76 @@ export function mapCoordinatesBilinear(img, H, W, rows, cols) {
   return out;
 }
 
-/** Exact nearest neighbor over 2D points via uniform grid hash
- *  (cKDTree.query replacement; returns {dist, idx}). */
+/** Exact nearest neighbor over 2D points (cKDTree.query replacement;
+ *  returns {dist, idx}). A static k-d tree: query cost stays ~log n
+ *  however far the query point is from the data (the smooth-fit ladder
+ *  queries from stiff curves sitting up to ~20 mm off the outline,
+ *  which made the old grid's ring search the profile's hot spot).
+ *  Ties resolve to the lowest index, and d2 is computed exactly as
+ *  before, so results are bit-identical to a brute-force argmin.
+ *  `cell` is unused (kept for the old grid's signature). */
+const LEAF = 8;
 export class GridNN {
   constructor(pts, cell = 1.0) {
+    const n = pts.length;
     this.pts = pts;
-    this.cell = cell;
-    let minX = Infinity, minY = Infinity;
-    for (const [x, y] of pts) { if (x < minX) minX = x; if (y < minY) minY = y; }
-    this.minX = minX; this.minY = minY;
-    this.map = new Map();
-    pts.forEach(([x, y], i) => {
-      const key = this.key(Math.floor((x - minX) / cell), Math.floor((y - minY) / cell));
-      let arr = this.map.get(key);
-      if (!arr) { arr = []; this.map.set(key, arr); }
-      arr.push(i);
-    });
+    const xs = this.xs = new Float64Array(n);
+    const ys = this.ys = new Float64Array(n);
+    for (let i = 0; i < n; i++) { xs[i] = pts[i][0]; ys[i] = pts[i][1]; }
+    const idx = this.idx = new Int32Array(n);
+    for (let i = 0; i < n; i++) idx[i] = i;
+    // implicit tree over idx ranges: node = {lo, hi, axis, split, l, r}
+    this.nodes = [];
+    if (n) this.root = this.build(0, n);
   }
-  key(gx, gy) { return gx * 73856093 ^ gy * 19349663; }
+  build(lo, hi) {
+    const { xs, ys, idx } = this;
+    const id = this.nodes.length;
+    const node = { lo, hi, axis: -1, split: 0, l: -1, r: -1 };
+    this.nodes.push(node);
+    if (hi - lo <= LEAF) return id;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let k = lo; k < hi; k++) {
+      const x = xs[idx[k]], y = ys[idx[k]];
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    const axis = x1 - x0 >= y1 - y0 ? 0 : 1;
+    const v = axis === 0 ? xs : ys;
+    const sub = Array.from(idx.subarray(lo, hi)).sort((a, b) => v[a] - v[b]);
+    idx.set(sub, lo);
+    const mid = (lo + hi) >> 1;
+    node.axis = axis;
+    node.split = v[idx[mid]];
+    // left holds coords <= split, right >= split (sorted ranges)
+    node.l = this.build(lo, mid);
+    node.r = this.build(mid, hi);
+    return id;
+  }
   query(x, y) {
-    const gx = Math.floor((x - this.minX) / this.cell);
-    const gy = Math.floor((y - this.minY) / this.cell);
     let best = Infinity, bestI = -1;
-    for (let ring = 0; ; ring++) {
-      // once a candidate exists, stop after the ring that could still beat it
-      if (bestI >= 0 && (ring - 1) * this.cell > Math.sqrt(best)) break;
-      let any = false;
-      for (let dx = -ring; dx <= ring; dx++) {
-        for (let dy = -ring; dy <= ring; dy++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
-          const arr = this.map.get(this.key(gx + dx, gy + dy));
-          if (!arr) continue;
-          any = true;
-          for (const i of arr) {
-            const ex = this.pts[i][0] - x, ey = this.pts[i][1] - y;
-            const d2 = ex * ex + ey * ey;
-            if (d2 < best || (d2 === best && i < bestI)) { best = d2; bestI = i; }
-          }
+    if (this.root === undefined) return { dist: Math.sqrt(best), idx: bestI };
+    const { xs, ys, idx, nodes } = this;
+    // (node, squared distance to its region's split plane) pairs
+    const stack = [this.root], bound = [0];
+    while (stack.length) {
+      const nd = nodes[stack.pop()];
+      if (bound.pop() > best) continue; // best improved since the push
+      if (nd.axis < 0) {
+        for (let k = nd.lo; k < nd.hi; k++) {
+          const i = idx[k];
+          const ex = xs[i] - x, ey = ys[i] - y;
+          const d2 = ex * ex + ey * ey;
+          if (d2 < best || (d2 === best && i < bestI)) { best = d2; bestI = i; }
         }
+        continue;
       }
-      if (any === false && bestI === -1 && ring * this.cell > 1e4) break; // safety
-      if (ring * this.cell > 1e5) break;
+      const d = (nd.axis === 0 ? x : y) - nd.split;
+      const near = d <= 0 ? nd.l : nd.r, far = d <= 0 ? nd.r : nd.l;
+      // far side can't beat best unless the split plane is within reach;
+      // <= keeps equal-distance points reachable for the index tie-break
+      if (d * d <= best) { stack.push(far); bound.push(d * d); }
+      stack.push(near); bound.push(0);
     }
     return { dist: Math.sqrt(best), idx: bestI };
   }

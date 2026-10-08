@@ -223,6 +223,30 @@ function containmentUnion(c, pocketPts, toolMm, clearance, log) {
   return { tck, pts, minSd };
 }
 
+/** cheap content hash of a contour, so an injected (re-sent) contour
+ *  hits the stage cache as well as the worker's own last contour */
+function contourKey(cMm) {
+  let h = 2166136261 >>> 0;
+  const f = new Float64Array(1), u = new Uint32Array(f.buffer);
+  for (const [x, y] of cMm) {
+    for (const v of [x, y]) {
+      f[0] = v;
+      h = Math.imul(h ^ u[0], 16777619) >>> 0;
+      h = Math.imul(h ^ u[1], 16777619) >>> 0;
+    }
+  }
+  return `${cMm.length}:${h}`;
+}
+
+// Stage cache, last result per stage. A tweak re-runs only the stages
+// whose inputs changed: thickness / depth / wall touch layout alone,
+// scallop moves skip the smooth fit (the expensive part). Every stage
+// is deterministic, so a hit returns exactly what a re-run would.
+const stageCache = { base: null, cut: null };
+export function clearProfileCache() {
+  stageCache.base = null; stageCache.cut = null;
+}
+
 /** Port of server.profile_response (profile side only). */
 export function profileResponse(c, cMm, params, log = () => {}) {
   const clearance = +(params.clearance ?? 1.0);
@@ -231,34 +255,71 @@ export function profileResponse(c, cMm, params, log = () => {}) {
   const minWall = +(params.min_wall ?? 3.0);
   const scallopD = +(params.scallop_d ?? 25.0);
   const scallopBlend = +(params.scallop_blend ?? 4.0);
+  const timings = {};
+  const timed = (name, fn) => {
+    const t0 = performance.now();
+    const v = fn();
+    timings[name] = Math.round(performance.now() - t0);
+    return v;
+  };
 
-  let cSrc = cMm;
-  if (params.max_contour) {
-    cSrc = convexHull(cSrc);
-    log("max contour: convex hull of the tool outline");
+  const baseKey = JSON.stringify([contourKey(cMm), !!params.max_contour,
+    params.symmetric ?? true, clearance, smoothR, !!params.flat_faithful]);
+  let base = stageCache.base && stageCache.base.key === baseKey
+    ? stageCache.base : null;
+  const baseHit = !!base;
+  if (base) {
+    for (const l of base.logs) log(l);
+  } else {
+    const logs = [];
+    const blog = (l) => { logs.push(l); log(l); };
+    let cSrc = cMm;
+    if (params.max_contour) {
+      cSrc = convexHull(cSrc);
+      blog("max contour: convex hull of the tool outline");
+    }
+    if (params.symmetric ?? true) {
+      cSrc = timed("symmetrize", () => symmetrizeContour(c, cSrc));
+      blog("symmetric cutout: mirrored union across centerline");
+    }
+    const prof = timed("fit", () => computeProfile(c, cSrc, clearance, smoothR,
+      blog, params.flat_faithful ? 0.3 : Infinity));
+    base = stageCache.base = { key: baseKey, prof, logs };
+    stageCache.cut = null;
   }
-  if (params.symmetric ?? true) {
-    cSrc = symmetrizeContour(c, cSrc);
-    log("symmetric cutout: mirrored union across centerline");
-  }
-  const prof = computeProfile(c, cSrc, clearance, smoothR, log,
-    params.flat_faithful ? 0.3 : Infinity);
+  const prof = base.prof;
   const scallops = params.scallops || autoScallops(prof.fit);
 
-  let cutSegs = prof.segs, cutPeriodic = prof.periodic, pocketPts = prof.fit;
-  if (scallopD > 0 && scallops.length) {
-    const s = addScallops(c, prof.fit, scallops, scallopD, scallopBlend, log);
-    cutSegs = [s.tck]; cutPeriodic = true; pocketPts = s.pts;
-  }
-  const warnings = [];
-  if (params.strict_contain) {
-    const fixed = containmentUnion(c, pocketPts, cMm, clearance, log);
-    if (fixed && fixed.failed) {
-      warnings.push("containment fix-up failed -- lower scallop/clearance or re-scan");
-    } else if (fixed) {
-      cutSegs = [fixed.tck]; cutPeriodic = true; pocketPts = fixed.pts;
+  const cutKey = JSON.stringify([baseKey, scallops, scallopD, scallopBlend,
+    !!params.strict_contain]);
+  let cut = stageCache.cut && stageCache.cut.key === cutKey
+    ? stageCache.cut : null;
+  const cutHit = !!cut;
+  if (cut) {
+    for (const l of cut.logs) log(l);
+  } else {
+    const logs = [];
+    const clog = (l) => { logs.push(l); log(l); };
+    let segs = prof.segs, periodic = prof.periodic, pts = prof.fit;
+    if (scallopD > 0 && scallops.length) {
+      const s = timed("scallops", () =>
+        addScallops(c, prof.fit, scallops, scallopD, scallopBlend, clog));
+      segs = [s.tck]; periodic = true; pts = s.pts;
     }
+    const cutWarnings = [];
+    if (params.strict_contain) {
+      const fixed = timed("contain", () =>
+        containmentUnion(c, pts, cMm, clearance, clog));
+      if (fixed && fixed.failed) {
+        cutWarnings.push("containment fix-up failed -- lower scallop/clearance or re-scan");
+      } else if (fixed) {
+        segs = [fixed.tck]; periodic = true; pts = fixed.pts;
+      }
+    }
+    cut = stageCache.cut = { key: cutKey, segs, periodic, pts, cutWarnings, logs };
   }
+  let cutSegs = cut.segs, cutPeriodic = cut.periodic, pocketPts = cut.pts;
+  const warnings = [...cut.cutWarnings];
 
   const L = layout(pocketPts, thickness, minWall, params.depth_mode || "flush");
   if ((prof.extra.minClearance ?? clearance) < clearance - 0.05 && !params.strict_contain) {
@@ -269,5 +330,6 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     layout: { nx: L.nx, ny: L.ny, nz: L.nz, H: L.H, depth: L.depth },
     center: L.bboxC, scallops, warnings,
     depthChoice: { mode: L.mode, options: L.options },
+    timings, cached: { base: baseHit, cut: cutHit },
   };
 }

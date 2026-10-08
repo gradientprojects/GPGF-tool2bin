@@ -183,6 +183,7 @@ async function scanPhoto(file) {
   customScallops = null; // fresh tool, fresh auto-placement
   if (three) three.placed = false; // new design: reframe the 3D view
   designRev = 1;
+  autoBuild = true; binStale = false; updateStale();
   try {
     const imageData = await fileToImageData(file);
     // 12 px/mm (~300 dpi) everywhere: the reference's 20 costs ~3x the
@@ -349,7 +350,11 @@ for (const [id, label] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
                            ["scallop", "v-scallop"], ["wall", "v-wall"]]) {
   const el = document.getElementById(`sl-${id}`);
   const lbl = document.getElementById(label);
-  el.addEventListener("input", () => { lbl.textContent = el.value; });
+  el.addEventListener("input", () => {
+    lbl.textContent = el.value;
+    // scallop circles are drawn here, not fitted: preview the size live
+    if (id === "scallop" && lastProfileDraw) drawProfile(...lastProfileDraw);
+  });
   el.addEventListener("change", () => {
     // smoothness reshapes the base outline -> dragged spots go stale
     if (id === "smooth") customScallops = null;
@@ -393,31 +398,55 @@ function currentParams() {
   };
 }
 
+// Latest wins: while a fit runs, further tweaks only flag a rerun, so a
+// burst of changes costs one extra fit (at the newest settings) instead
+// of queueing one per change in the worker.
+let profileBusy = false, profileQueued = false;
+// the first profile of a new design (scan / STEP import) builds the
+// solid by itself; after that the 3D view waits for "Rebuild 3D"
+let autoBuild = false;
 async function runProfile() {
-  const cres = window.__contour;
-  if (!cres || !cres.ok) return;
+  if (!window.__contour || !window.__contour.ok) return;
+  if (profileBusy) { profileQueued = true; return; }
+  profileBusy = true;
   profileSec.style.display = "block";
   paneProfile.style.display = "block";
-  busyStatus(profileStatus, "fitting pocket profile…");
+  markStale();
   try {
-    const params = currentParams();
-    const msg = { type: "profile", params };
-    if (cres.fromStep) msg.contourMm = cres.contourMm;
-    const r = await cvRequest(msg, [], 600000);
-    if (!r.ok) throw new Error(r.error);
-    window.__profile = { ...r, params };
-    drawProfile(cres.contourMm, r);
-    const L = r.layout;
-    profileStatus.textContent =
-      `bin ${L.nx}×${L.ny}×${L.nz}u (${(L.nx * 42 - 0.5).toFixed(1)}×` +
-      `${(L.ny * 42 - 0.5).toFixed(1)}×${L.H} mm), pocket depth ${L.depth} mm` +
-      (r.warnings.length ? ` — ⚠ ${r.warnings.join("; ")}` : "") +
-      ` (${(r.ms / 1000).toFixed(1)}s)`;
-    showDepthChoice(r.depthChoice);
-    await runBuild();
+    do {
+      profileQueued = false;
+      const cres = window.__contour;
+      if (!cres || !cres.ok) break;
+      busyStatus(profileStatus, window.__profile && window.__profile.ok
+        ? "updating pocket profile…" : "fitting pocket profile…");
+      const params = currentParams();
+      const msg = { type: "profile", params };
+      if (cres.fromStep) msg.contourMm = cres.contourMm;
+      const r = await cvRequest(msg, [], 600000);
+      // superseded while fitting (newer tweak, or a new design)
+      if (cres !== window.__contour) profileQueued = true;
+      if (profileQueued) continue;
+      if (!r.ok) throw new Error(r.error);
+      window.__profile = { ...r, params };
+      drawProfile(cres.contourMm, r);
+      const L = r.layout;
+      profileStatus.textContent =
+        `bin ${L.nx}×${L.ny}×${L.nz}u (${(L.nx * 42 - 0.5).toFixed(1)}×` +
+        `${(L.ny * 42 - 0.5).toFixed(1)}×${L.H} mm), pocket depth ${L.depth} mm` +
+        (r.warnings.length ? ` — ⚠ ${r.warnings.join("; ")}` : "") +
+        ` (${(r.ms / 1000).toFixed(1)}s)`;
+      showDepthChoice(r.depthChoice);
+    } while (profileQueued);
   } catch (e) {
     window.__profile = { ok: false, error: String(e) };
     profileStatus.textContent = "error: " + e.message;
+  } finally {
+    profileBusy = false;
+    updateStale();
+  }
+  if (autoBuild && window.__profile && window.__profile.ok) {
+    autoBuild = false;
+    await runBuild();
   }
 }
 optMax.addEventListener("change", runProfile);
@@ -505,7 +534,7 @@ for (const el of [magOd, magH]) {
       localStorage.setItem("t2b.pocketod", magOd.value);
       localStorage.setItem("t2b.pocketd", magH.value);
     } catch {}
-    runBuild();
+    markStale();
   });
 }
 const optDeboss = document.getElementById("opt-deboss");
@@ -668,12 +697,33 @@ window.addEventListener("resize", () => {
   }, 150);
 });
 
+// 3D model out of date: any tweak after a design's first build marks it
+// stale; "Rebuild 3D" (or Download STEP) rebuilds it
+const staleEl = document.getElementById("bin-stale");
+const rebuildBtn = document.getElementById("rebuild-3d");
+let binStale = false, buildBusy = false;
+function markStale() {
+  if (!window.__bin) return; // nothing built yet: the first build is coming
+  binStale = true;
+  updateStale();
+}
+function updateStale() {
+  const p = window.__profile;
+  const ready = !!(p && p.ok) && !profileBusy && !buildBusy;
+  staleEl.hidden = !binStale;
+  rebuildBtn.disabled = !ready;
+  exportBtn.disabled = !ready || !(binStale || (window.__bin && window.__bin.ok));
+}
+rebuildBtn.addEventListener("click", () => runBuild());
+
 async function runBuild() {
   const p = window.__profile;
-  if (!p || !p.ok) return;
+  if (!p || !p.ok || profileBusy || buildBusy) return;
   binSec.style.display = "block";
   paneBin.style.display = "block";
-  exportBtn.disabled = true;
+  buildBusy = true;
+  binStale = false;
+  updateStale();
   busyStatus(binStatus, "building bin solid…");
   try {
     // the tool contour rides into the STEP's embedded design so an
@@ -707,15 +757,18 @@ async function runBuild() {
     const logEl = document.getElementById("bin-log");
     logEl.querySelector("pre").textContent = (r.logs || []).join("\n");
     logEl.style.display = "block";
-    exportBtn.disabled = false;
   } catch (e) {
     window.__bin = { ok: false, error: String(e) };
+    binStale = true; // keep the rebuild offer up for a retry
     binStatus.textContent = "error: " + (e.message || e);
+  } finally {
+    buildBusy = false;
+    updateStale();
   }
 }
 binThickness.addEventListener("change", runProfile);
-optMagnets.addEventListener("change", runBuild);
-optDeboss.addEventListener("change", runBuild);
+optMagnets.addEventListener("change", markStale);
+optDeboss.addEventListener("change", markStale);
 optEdge.addEventListener("change", runProfile);
 
 // spaces are fine in filenames; strip only what filesystems reject
@@ -725,6 +778,11 @@ const cleanName = (s) => s.replace(/[\\/:*?"<>|\x00-\x1f]+/g, "-")
 exportBtn.addEventListener("click", async () => {
   const p = window.__profile;
   if (!p || !p.ok) return;
+  // never export a solid that doesn't match the settings on screen
+  if (binStale) {
+    await runBuild();
+    if (!window.__bin || !window.__bin.ok) return;
+  }
   const name = cleanName(binName.value) || "tool";
   const prefix = cleanName(binPrefix.value);
   const L = p.layout;
@@ -768,7 +826,9 @@ async function reviseFromStep(file) {
     if (!design.contour) throw new Error("design has no contour (old export?)");
     window.__warp = null;
     window.__contour = { ok: true, contourMm: design.contour, fromStep: true };
+    window.__bin = null;
     if (three) three.placed = false; // new design: reframe the 3D view
+    autoBuild = true; binStale = false; updateStale();
     binName.value = design.name || "tool";
     designRev = (design.rev || 1) + 1;
     const p = design.params || {};

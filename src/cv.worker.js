@@ -41,7 +41,7 @@ function detectAruco(c, imageData) {
 import { detectAndWarp } from "./warp.js";
 import { segment } from "./segment.js";
 import { findPose, rotateContour, toOrientedMm } from "./pose.js";
-import { profileResponse } from "./profilestage.js";
+import { profileResponse, clearProfileCache } from "./profilestage.js";
 
 let lastContourMm = null; // oriented mm contour from the contour stage
 let lastProfile = null;
@@ -121,6 +121,7 @@ async function contour({ imageData = null, field, pxmm }, tick = () => {}) {
   const rot = rotateContour(seg.contourPx, pose.angle, pose.center, src.cols);
   const { cMm, flipped, centerMm } = toOrientedMm(rot, px, log);
   lastContourMm = cMm;
+  clearProfileCache();
   seg.mask.delete();
   if (own) src.delete();
   return { ok: true, contourMm: cMm, contourPx: seg.contourPx,
@@ -142,7 +143,7 @@ async function profile({ contourMm = null, params = {} }) {
   // segs (tck data) ride along: the CAD worker builds the solid from them
   return { ok: true, fit: r.fit, pocketPts: r.pocketPts, layout: r.layout,
     center: r.center, scallops: r.scallops, warnings: r.warnings,
-    depthChoice: r.depthChoice,
+    depthChoice: r.depthChoice, timings: r.timings, cached: r.cached,
     periodic: r.periodic, segs: r.segs, logs,
     ms: Math.round(performance.now() - t0) };
 }

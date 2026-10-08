@@ -273,7 +273,13 @@
         <label class="pv edgetog"><input type="checkbox" id="opt-edges"
           checked> edges</label>
       </div>
-      <canvas id="bin-view" width="560" height="420"></canvas>
+      <div class="viewwrap">
+        <canvas id="bin-view" width="560" height="420"></canvas>
+        <div id="bin-stale" class="stale" hidden>
+          <span>settings changed — the 3D model is out of date</span>
+          <button id="rebuild-3d">Rebuild 3D</button>
+        </div>
+      </div>
     </div>
     </div>
 
