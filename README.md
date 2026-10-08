@@ -5,13 +5,30 @@ Photograph a tool on a printed template — get a Gridfinity bin as a
 browser: the photo never leaves your device, there is no server, no
 account, no tracking. After the first load it works offline (PWA).
 
+### What goes over the network
+
+- **Downloads only, all of them the app itself:** the page, its code,
+  the OpenCV and OpenCASCADE engines, the blank template image the
+  engine self-test checks, and the font for the revision label stamped
+  on the bin. A service worker caches them, so later visits work
+  offline.
+- **Nothing is sent from your device.** Opening a photo or STEP file
+  only lets the page read it inside your browser; segmentation, the
+  pocket fit and the STEP export all run locally in Web Workers. There
+  is no backend, no account, no cookies, no analytics.
+- Your filename prefix, paper size and magnet pocket size are kept in
+  the browser's localStorage, nowhere else.
+- The site is static files on GitHub Pages, which (like any web host)
+  sees that the pages were requested — IP address and browser — but
+  never your photos or files.
+
 ## How it works
 
 1. **Print the template** (letter or A4, linked on the page) at 100%
    scale — verify the printed 100 mm ruler. Plain paper works too,
    the template is just much more robust in uneven light.
 2. **Photograph your tool** on the sheet with any camera (a phone is
-   fine) and upload the photo on your computer — the app is built for
+   fine) and open the photo on your computer — the app is built for
    desktop browsers.
 3. The app perspective-corrects the sheet via the ArUco border,
    segments the tool with illumination-normalized scoring, finds its

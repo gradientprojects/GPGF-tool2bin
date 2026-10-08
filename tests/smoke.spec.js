@@ -65,9 +65,9 @@ test("warps the synthetic template end-to-end (CI-safe)", async ({ page }) => {
   expect(max).toBeLessThan(0.6);
 });
 
-// desktop-first: one upload input takes photos AND STEP files, never
+// desktop-first: one file input takes photos AND STEP files, never
 // forces the camera; phones get a notice banner, desktops don't.
-test("single upload input; phone notice only on phones", async ({ page, browser }) => {
+test("single file input; phone notice only on phones", async ({ page, browser }) => {
   await page.goto("/");
   const input = page.locator("#photo");
   await expect(input).toHaveAttribute("accept", /image\/\*/);
@@ -81,4 +81,16 @@ test("single upload input; phone notice only on phones", async ({ page, browser 
   await pp.goto("/");
   await expect(pp.locator("#phone-note")).toBeVisible();
   await phone.close();
+});
+
+// files are opened locally, never sent: the UI must not say "upload",
+// and it explains what the network is (and isn't) used for
+test("no 'upload' wording; network explainer present", async ({ page }) => {
+  await page.goto("/");
+  const text = await page.locator("body").innerText();
+  expect(text).not.toMatch(/upload/i);
+  const privacy = page.locator("#privacy");
+  await expect(privacy.locator("summary")).toHaveText("What goes over the network?");
+  await privacy.locator("summary").click();
+  await expect(privacy).toContainText("Nothing is sent from your device");
 });

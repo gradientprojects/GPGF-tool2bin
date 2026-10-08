@@ -15,6 +15,26 @@
     <h1>GPGF-tool2bin</h1>
     <p class="tag">Photo of a tool &rarr; Gridfinity bin STEP. Everything runs in
       your browser &mdash; photos never leave your device.</p>
+    <details class="privacy" id="privacy">
+      <summary>What goes over the network?</summary>
+      <ul>
+        <li><b>Downloads only, all of them the app itself:</b> the page,
+          its code, the vision and CAD engines, the blank template image
+          the self-test checks, and the font for the revision label on
+          the bin. After the first visit they&rsquo;re cached and the app
+          works offline.</li>
+        <li><b>Nothing is sent from your device.</b> Opening a photo or
+          STEP file just lets this page read it inside your browser; all
+          processing happens on your computer, and the STEP you download
+          is built right here. There is no server to receive anything
+          &mdash; no account, no cookies, no analytics or tracking.</li>
+        <li>Your filename prefix, paper size and magnet size are kept in
+          this browser only.</li>
+        <li>The files are hosted on GitHub Pages, which, like any web
+          host, sees that the pages were requested (your IP address and
+          browser) &mdash; never your photos or files.</li>
+      </ul>
+    </details>
     <p class="phone-note" id="phone-note" hidden>Made for desktop &mdash;
       take the photo with your phone, then open this page on your computer
       to build and download the bin.</p>
@@ -43,12 +63,12 @@
       <div class="filerow">
         <label class="filebtn">
           <input type="file" id="photo" accept="image/*,.step,.stp">
-          &#128194; Upload image (new) or STEP file (to revise)
+          &#128194; Open image (new) or STEP file (to revise)
         </label>
       </div>
       <ul class="hint">
         <li>Lay the tool on the sheet and photograph it with any camera
-          (a phone is fine), then upload the photo here — or drag it
+          (a phone is fine), then open the photo here — or drag it
           anywhere on this page.</li>
         <li>An exported STEP goes in the same way: it reopens its design
           for revision, no photo needed.</li>
@@ -269,7 +289,7 @@
         <pre></pre>
       </details>
       <div><button id="export-step" disabled>&#11015; Download STEP</button></div>
-      <p class="hint">The STEP carries its own design: upload or drop an
+      <p class="hint">The STEP carries its own design: open or drop an
         exported .step back onto this page to revise it (no photo needed) — the
         next export uprevs itself (R01 &rarr; R02).</p>
     </section>
