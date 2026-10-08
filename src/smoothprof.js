@@ -1,7 +1,7 @@
 // Port of scan2step/smooth.py: raster SDF machinery (rasterize, signed
 // distance, morphological closing by distance threshold), sub-pixel
 // offset / symmetrize via marching squares on the SDF, periodic
-// P-splines with the containment inflation loop, and scallop blending.
+// P-splines with the containment inflation loop, and scoop blending.
 // `c` is the ready OpenCV instance; PX mirrors the reference 20 px/mm.
 import {
   roundHalfEven, gaussianFilter1d, interp, solve, mapCoordinatesBilinear, GridNN,
@@ -218,9 +218,9 @@ export function curvaturePeriodic(tck, m = 4000) {
   return { pts, kap };
 }
 
-export function addScallops(c, basePts, scallops, d, blend = 4.0, log = () => {}) {
+export function addScoops(c, basePts, scoops, d, blend = 4.0, log = () => {}) {
   const extra = [];
-  for (const s of scallops) {
+  for (const s of scoops) {
     extra.push([s[0] + d / 2, s[1] + d / 2], [s[0] - d / 2, s[1] - d / 2]);
   }
   const b = bbox([...basePts, ...extra]);
@@ -230,7 +230,7 @@ export function addScallops(c, basePts, scallops, d, blend = 4.0, log = () => {}
   const H = Math.trunc(h * PX) + 2, W = Math.trunc(w * PX) + 2;
   const mask = fillMask(c, H, W, [basePts], origin);
   const zone = c.Mat.zeros(H, W, c.CV_8UC1);
-  for (const [sx, sy] of scallops) {
+  for (const [sx, sy] of scoops) {
     const cx = Math.trunc(roundHalfEven((sx - origin[0]) * PX));
     const cy = Math.trunc(roundHalfEven((sy - origin[1]) * PX));
     c.circle(mask, new c.Point(cx, cy), Math.trunc(roundHalfEven((d / 2) * PX)),
@@ -262,7 +262,7 @@ export function addScallops(c, basePts, scallops, d, blend = 4.0, log = () => {}
     }
     if (dev <= 0.15) break;
   }
-  log(`scallops blended (r ${blend} mm junctions), refit dev ${dev.toFixed(3)} mm`);
+  log(`scoops blended (r ${blend} mm junctions), refit dev ${dev.toFixed(3)} mm`);
   return { tck, pts };
 }
 

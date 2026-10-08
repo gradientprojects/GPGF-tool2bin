@@ -66,12 +66,30 @@
           &#128194; Open image (new) or STEP file (to revise)
         </label>
       </div>
+      <div id="step-choice" class="suggest" hidden>
+        <div class="choicehead" id="step-choice-head"></div>
+        <div class="choices">
+          <button type="button" class="choice" id="step-revise">
+            <b>Revise this bin</b><span>open its tool and settings, replacing
+            the tool that&rsquo;s open now</span>
+          </button>
+          <button type="button" class="choice" id="step-settings">
+            <b>Use only its settings</b><span>copy its pocket and bin
+            settings onto the tool that&rsquo;s open now</span>
+          </button>
+        </div>
+      </div>
       <ul class="hint">
         <li>Lay the tool on the sheet and photograph it with any camera
           (a phone is fine), then open the photo here — or drag it
           anywhere on this page.</li>
         <li>An exported STEP goes in the same way: it reopens its design
           for revision, no photo needed.</li>
+        <li>Made a bin you like? Its settings (clearance, smoothness,
+          finger scoops, wall, magnets, edge, &hellip;) stay for the next
+          photo you open. With a tool already open, opening a STEP asks
+          whether to revise that bin or use only its settings. Each tool
+          keeps its own shape and thickness.</li>
         <li>Shoot straight down over the tool.</li>
         <li>Thick tool? Step back and use 2×/3× <em>optical</em> zoom if
           your camera has it — up close, it sees the tool&rsquo;s sides
@@ -197,23 +215,43 @@
           <span class="val"><span id="v-smooth">8</span> mm</span></label>
         <div class="sub">how much the outline is relaxed into a flowing
           curve — higher hides scan noise and small detail</div>
-        <label class="slrow">scallop &#8960;
-          <input type="range" id="sl-scallop" min="0" max="40" step="1"
+        <label class="slrow">finger scoop &#8960;
+          <input type="range" id="sl-scoop" min="0" max="40" step="1"
             value="25">
-          <span class="val"><span id="v-scallop">25</span> mm</span></label>
+          <span class="val"><span id="v-scoop">25</span> mm</span></label>
         <div class="sub"><ul>
-          <li>finger scallops at the tool&rsquo;s left and right ends so
+          <li>finger scoops at the tool&rsquo;s left and right ends so
             you can lift it out — 0 removes them</li>
           <li>drag the blue dots in the preview to reposition them</li>
         </ul></div>
-        <div id="scallop-suggest" class="suggest" hidden>
-          <div class="choicehead">the scallops cost a grid unit:</div>
+        <label class="slrow">finger scoop fillet
+          <input type="range" id="sl-fillet" min="1" max="10" step="0.5"
+            value="6">
+          <span class="val"><span id="v-fillet">6</span> mm</span></label>
+        <div class="sub">radius rounding the edge where a finger scoop
+          meets the pocket wall</div>
+        <div class="optrow">
+        <label>finger scoops
+          <select id="opt-scoop-mode">
+            <option value="mirror" selected>mirrored pair</option>
+            <option value="free">independent pair</option>
+            <option value="left">left only</option>
+            <option value="right">right only</option>
+          </select></label>
+        <div class="sub"><ul>
+          <li>mirrored: both at the same height, dragging one moves the other</li>
+          <li>independent: drag each on its own; left / right only: one
+            finger scoop</li>
+        </ul></div>
+        </div>
+        <div id="scoop-suggest" class="suggest" hidden>
+          <div class="choicehead">the finger scoops cost a grid unit:</div>
           <div class="choices">
             <button type="button" class="choice" id="sg-size" hidden>
-              <b>Smaller scallops</b><span class="give"></span><span class="get"></span>
+              <b>Smaller finger scoops</b><span class="give"></span><span class="get"></span>
             </button>
             <button type="button" class="choice" id="sg-move" hidden>
-              <b>Move scallops</b><span class="give"></span><span class="get"></span>
+              <b>Move finger scoops</b><span class="give"></span><span class="get"></span>
             </button>
           </div>
         </div>
@@ -289,6 +327,20 @@
         <pre></pre>
       </details>
       <div><button id="export-step" disabled>&#11015; Download STEP</button></div>
+      <div class="optrow">
+      <label><input type="checkbox" id="opt-negative"> also export the
+        negative body</label>
+      <span class="tip" id="tip-negative" tabindex="0" role="note"
+        title="Fit test before the full print: print the NEG file in spiral vase mode (one wall, no top) and drop the tool in. The vase's outside matches the pocket wall, so its inside is about one line width smaller per side (~0.45 mm with a 0.4 mm nozzle) — if the tool fits the vase, it fits the bin. At clearances under ~0.5 mm it can feel tight in the vase yet still fit the real bin."
+        aria-label="Fit test tip: print the NEG file in spiral vase mode and drop the tool in; if it fits the vase, it fits the bin (the vase is about one line width tighter per side).">&#9432;</span>
+      <div class="sub"><ul>
+        <li>a second STEP (name ends in NEG): the pocket cutout as its own
+          solid — floor to rim, finger scoops included, no chamfer or
+          magnets</li>
+        <li>same position as the bin, for your own cuts in CAD
+          (remembered on this device)</li>
+      </ul></div>
+      </div>
       <p class="hint">The STEP carries its own design: open or drop an
         exported .step back onto this page to revise it (no photo needed) — the
         next export uprevs itself (R01 &rarr; R02).</p>

@@ -63,6 +63,8 @@ ul.hint li { margin:6px 0; line-height:1.4; }
 
 /* options: one per line, control + explanation underneath */
 .optrow { margin:12px 0; }
+.tip { color:var(--dim); cursor:help; margin-left:6px; font-size:14px; }
+.tip:hover, .tip:focus { color:var(--fg); }
 .optrow > label { display:inline-flex; align-items:center; gap:8px;
                   font-size:14.5px; color:var(--fg); }
 .sub { color:var(--dim); font-size:12.5px; line-height:1.4;
@@ -111,7 +113,7 @@ select, input[type=text], input[type=number] {
                 font-weight:600; padding:10px 18px; border-radius:8px;
                 cursor:pointer; pointer-events:auto; }
 .stale button:disabled { opacity:.55; cursor:default; }
-#profile-view { touch-action:none; } /* scallop dots are draggable */
+#profile-view { touch-action:none; } /* scoop dots are draggable */
 
 /* pocket depth: two side-by-side choices, each listing give / get */
 .choicehead { font-size:14.5px; margin-bottom:6px; }
@@ -128,7 +130,7 @@ select, input[type=text], input[type=number] {
 .choice:disabled { opacity:.55; cursor:default; }
 @media (max-width: 420px) { .choices { grid-template-columns:1fr; } }
 
-/* scallop suggestions: only shown when verified to save a grid unit */
+/* scoop suggestions: only shown when verified to save a grid unit */
 .suggest { margin:10px 0 0; }
 .suggest .choices { grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); }
 .choice[hidden] { display:none; }

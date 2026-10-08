@@ -13,7 +13,7 @@ import {
 } from "../src/profilefit.js";
 import {
   sdf, closing, rasterize, offsetContour, symmetrizeContour,
-  periodicFit, curvaturePeriodic, smoothProfile, addScallops,
+  periodicFit, curvaturePeriodic, smoothProfile, addScoops,
 } from "../src/smoothprof.js";
 
 const FIX = path.join(import.meta.dirname, "fixtures", "profile");
@@ -128,7 +128,7 @@ test("corner detection + literal profile fit match", () => {
   }
 });
 
-test("cv chain: sdf / closing / offset / symmetrize / smooth / scallops", async () => {
+test("cv chain: sdf / closing / offset / symmetrize / smooth / scoops", async () => {
   test.setTimeout(240000);
   const c = await cvReady();
   const f = load("smooth_chain");
@@ -168,7 +168,7 @@ test("cv chain: sdf / closing / offset / symmetrize / smooth / scallops", async 
   expect(sm.fit.length).toBe(f.smooth.fit.length);
   expect(maxPtDiff(sm.fit, f.smooth.fit)).toBeLessThan(1e-5);
 
-  const sc = addScallops(c, sm.fit, [[-26.0, 0.0], [26.0, 0.0]], 20.0, 4.0,
+  const sc = addScoops(c, sm.fit, [[-26.0, 0.0], [26.0, 0.0]], 20.0, 4.0,
     (l) => logs.push(l));
   expect(sc.pts.length).toBe(f.scallops.pocket.length);
   expect(maxPtDiff(sc.pts, f.scallops.pocket)).toBeLessThan(1e-5);

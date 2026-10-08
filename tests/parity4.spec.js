@@ -71,9 +71,9 @@ test.describe("stage-4/5 profile parity vs oracle", () => {
       const r = profileResponse(c, d.contour_mm, d.profile.params,
         (l) => logs.push(l));
       checkAgainst(r, d.profile, `P4 ${d.photo} canonical`, 1);
-      // auto-scallop positions are part of the contract
-      expect(r.scallops.length).toBe(d.profile.auto_scallops_mm.length);
-      r.scallops.forEach((s, i) => {
+      // auto-scoop positions are part of the contract
+      expect(r.scoops.length).toBe(d.profile.auto_scallops_mm.length);
+      r.scoops.forEach((s, i) => {
         const ref = d.profile.auto_scallops_mm[i];
         expect(Math.hypot(s[0] - ref[0], s[1] - ref[1])).toBeLessThan(1e-3);
       });

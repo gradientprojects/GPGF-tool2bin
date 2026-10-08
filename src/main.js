@@ -1,9 +1,11 @@
 import { wrap } from "comlink";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { GRID, GAP } from "./profilestage.js";
+import {
+  GRID, GAP, chordPartner, scoopsForMode, SCOOP_MODES, legacyScoopParams,
+} from "./profilestage.js";
 import { R_TOP } from "./bin3d.js";
-import { suggestSize, suggestPosition, D_MIN } from "./scallopfit.js";
+import { suggestSize, suggestPosition, D_MIN } from "./scoopfit.js";
 
 // results Playwright asserts on
 window.__selftest = { cad: null, cv: null };
@@ -184,9 +186,9 @@ async function scanPhoto(file) {
   window.__contour = null;
   window.__profile = null;
   window.__bin = null;
-  customScallops = null; // fresh tool, fresh auto-placement
+  customScoops = null; // fresh tool, fresh auto-placement
   if (three) three.placed = false; // new design: reframe the 3D view
-  designRev = 1;
+  designRev = 1; revExported = false;
   autoBuild = true; binStale = false; updateStale();
   try {
     const imageData = await fileToImageData(file);
@@ -240,9 +242,9 @@ const optStrict = document.getElementById("opt-strict");
 
 let lastProfileDraw = null; // redrawn on resize at the new display size
 let profView = null;        // mm<->canvas transform of the last draw
-let customScallops = null;  // user-dragged scallop centers (worker override)
-let dragIdx = -1, dragScallops = null; // in-progress drag
-let previewScallops = null, previewD = null; // hovered suggestion
+let customScoops = null;  // user-dragged scoop centers (worker override)
+let dragIdx = -1, dragScoops = null; // in-progress drag
+let previewScoops = null, previewD = null; // hovered suggestion
 function drawProfile(toolMm, r) {
   lastProfileDraw = [toolMm, r];
   // backing resolution follows the CSS display box, sharp on hidpi
@@ -322,12 +324,12 @@ function drawProfile(toolMm, r) {
     poly(r.pocketPts, "#ff7a30", "rgba(255,122,48,0.12)");
   }
   poly(toolMm, "#9aa7b5", "rgba(154,167,181,0.25)");
-  const scallopD = previewD ?? +sliders.scallop.value;
-  const dots = dragScallops || previewScallops || r.scallops;
-  if (scallopD > 0 && dots) dots.forEach(([sx, sy], i) => {
+  const scoopD = previewD ?? +sliders.scoop.value;
+  const dots = dragScoops || previewScoops || r.scoops;
+  if (scoopD > 0 && dots) dots.forEach(([sx, sy], i) => {
     ctx.setLineDash([4 * dpr, 4 * dpr]);
     ctx.beginPath();
-    ctx.arc(tx(sx), ty(sy), (scallopD / 2) * s, 0, Math.PI * 2);
+    ctx.arc(tx(sx), ty(sy), (scoopD / 2) * s, 0, Math.PI * 2);
     ctx.strokeStyle = dragIdx === i ? "#8ec5ff" : "rgba(77,163,255,0.6)";
     ctx.lineWidth = 1 * dpr;
     ctx.stroke();
@@ -338,7 +340,7 @@ function drawProfile(toolMm, r) {
   });
 }
 
-// ---- draggable scallops (ported from the PoC UI) ---------------------------
+// ---- draggable scoops (ported from the PoC UI) ---------------------------
 function snapToFit(pt) {
   const fit = lastProfileDraw[1].fit;
   let best = Infinity, bi = 0;
@@ -360,35 +362,35 @@ function pointerMm(e) {
 
 profileCnv.addEventListener("pointerdown", (e) => {
   const r = lastProfileDraw && lastProfileDraw[1];
-  if (!r || !r.scallops || !r.scallops.length || +sliders.scallop.value <= 0 ||
+  if (!r || !r.scoops || !r.scoops.length || +sliders.scoop.value <= 0 ||
       !profView) return;
   const { px, py, k } = pointerMm(e);
   const hit = 14 * k; // 14 CSS px, like the PoC
-  dragIdx = r.scallops.findIndex(([sx, sy]) => {
+  dragIdx = r.scoops.findIndex(([sx, sy]) => {
     const dx = (sx - profView.cx) * profView.s + profView.Wc / 2 - px;
     const dy = profView.Hc / 2 - (sy - profView.cy) * profView.s - py;
     return Math.hypot(dx, dy) < hit;
   });
   if (dragIdx < 0) return;
-  dragScallops = r.scallops.map((p) => p.slice());
+  dragScoops = r.scoops.map((p) => p.slice());
   profileCnv.setPointerCapture(e.pointerId);
   e.preventDefault();
 });
 profileCnv.addEventListener("pointermove", (e) => {
   if (dragIdx < 0) return;
   const p = snapToFit(pointerMm(e).mm);
-  dragScallops[dragIdx] = p;
-  // the other scallop mirrors across the symmetry axis (x = 0), as in
-  // the PoC — contours arrive centered from pose normalization
-  if (dragScallops.length > 1) {
-    dragScallops[1 - dragIdx] = snapToFit([-p[0], p[1]]);
+  dragScoops[dragIdx] = p;
+  // mirrored pair: the other scoop follows to the far edge at the same
+  // height; independent / single scoops move alone
+  if (optScoopMode.value === "mirror" && dragScoops.length > 1) {
+    dragScoops[1 - dragIdx] = chordPartner(lastProfileDraw[1].fit, p);
   }
   drawProfile(...lastProfileDraw);
 });
 const endDrag = (e) => {
   if (dragIdx < 0) return;
-  customScallops = dragScallops;
-  dragIdx = -1; dragScallops = null;
+  customScoops = dragScoops;
+  dragIdx = -1; dragScoops = null;
   try { profileCnv.releasePointerCapture(e.pointerId); } catch {}
   runProfile();
 };
@@ -397,17 +399,18 @@ profileCnv.addEventListener("pointercancel", endDrag);
 
 const sliders = {};
 for (const [id, label] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
-                           ["scallop", "v-scallop"], ["wall", "v-wall"]]) {
+                           ["scoop", "v-scoop"], ["fillet", "v-fillet"],
+                           ["wall", "v-wall"]]) {
   const el = document.getElementById(`sl-${id}`);
   const lbl = document.getElementById(label);
   el.addEventListener("input", () => {
     lbl.textContent = el.value;
-    // scallop circles are drawn here, not fitted: preview the size live
-    if (id === "scallop" && lastProfileDraw) drawProfile(...lastProfileDraw);
+    // scoop circles are drawn here, not fitted: preview the size live
+    if (id === "scoop" && lastProfileDraw) drawProfile(...lastProfileDraw);
   });
   el.addEventListener("change", () => {
     // smoothness reshapes the base outline -> dragged spots go stale
-    if (id === "smooth") customScallops = null;
+    if (id === "smooth") customScoops = null;
     runProfile();
   });
   sliders[id] = el;
@@ -416,18 +419,27 @@ for (const [id, label] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
  *  programmatically, which fires no input events) */
 function syncSliderLabels() {
   for (const [id, lbl] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
-                           ["scallop", "v-scallop"], ["wall", "v-wall"]]) {
+                           ["scoop", "v-scoop"], ["fillet", "v-fillet"],
+                           ["wall", "v-wall"]]) {
     document.getElementById(lbl).textContent = sliders[id].value;
   }
 }
 
 const optSymmetric = document.getElementById("opt-symmetric");
 optSymmetric.addEventListener("change", () => {
-  customScallops = null; // mirrored outline moves the auto spots
+  customScoops = null; // mirrored outline moves the auto spots
   runProfile();
 });
 const optFlat = document.getElementById("opt-flat");
 optFlat.addEventListener("change", () => runProfile());
+// scoop mode keeps the spots on screen where it can (dragged or auto)
+const optScoopMode = document.getElementById("opt-scoop-mode");
+optScoopMode.addEventListener("change", () => {
+  const r = lastProfileDraw && lastProfileDraw[1];
+  customScoops = r ? scoopsForMode(r.fit, r.scoops, optScoopMode.value)
+    : null;
+  runProfile();
+});
 
 function currentParams() {
   return {
@@ -435,14 +447,15 @@ function currentParams() {
     depth_mode: depthMode,
     clearance: +sliders.clearance.value,
     smooth_r: +sliders.smooth.value,
-    scallop_d: +sliders.scallop.value,
-    scallop_blend: 4.0,
+    scoop_d: +sliders.scoop.value,
+    scoop_blend: +sliders.fillet.value,
+    scoop_mode: optScoopMode.value,
     min_wall: +sliders.wall.value,
     symmetric: optSymmetric.checked,
     max_contour: optMax.checked,
     strict_contain: optStrict.checked,
     flat_faithful: optFlat.checked,
-    scallops: customScallops || undefined,
+    scoops: customScoops || undefined,
     magnets: currentMagnets(),
     edge: optEdge.value ? { style: optEdge.value, size: 1.0 } : {},
   };
@@ -525,11 +538,11 @@ async function runProfile() {
 }
 optMax.addEventListener("change", runProfile);
 
-// ---- scallop suggestions that save a grid unit ------------------------------
-// scallopfit.js predicts candidates from the bbox alone; each one is
+// ---- scoop suggestions that save a grid unit ------------------------------
+// scoopfit.js predicts candidates from the bbox alone; each one is
 // then checked with a real fit (cheap: the base fit is cached) and only
 // shown if the real layout is smaller. Any tweak cancels the round.
-const suggestEl = document.getElementById("scallop-suggest");
+const suggestEl = document.getElementById("scoop-suggest");
 const sgBtns = { size: document.getElementById("sg-size"),
                  move: document.getElementById("sg-move") };
 let suggestGen = 0, suggestions = { size: null, move: null };
@@ -540,8 +553,8 @@ function clearSuggestions() {
   window.__suggest = { done: false, size: null, move: null };
   suggestEl.hidden = true;
   for (const b of Object.values(sgBtns)) b.hidden = true;
-  if (previewScallops || previewD != null) {
-    previewScallops = null; previewD = null;
+  if (previewScoops || previewD != null) {
+    previewScoops = null; previewD = null;
     if (lastProfileDraw) drawProfile(...lastProfileDraw);
   }
 }
@@ -563,21 +576,22 @@ async function refreshSuggestions() {
   };
   try {
     let size = null, move = null;
-    const s = suggestSize(p.fit, p.scallops, params.scallop_d, params.min_wall, cur);
+    const s = suggestSize(p.fit, p.scoops, params.scoop_d, params.min_wall, cur);
     // the bbox prediction can be a hair optimistic: allow 2 mm more
     if (s) for (let d = s.d; d >= Math.max(D_MIN, s.d - 2); d--) {
-      const L = await verify({ scallop_d: d });
+      const L = await verify({ scoop_d: d });
       if (gen !== suggestGen) return;
       if (L) { size = { d, L }; break; }
     }
-    const m = suggestPosition(p.fit, p.scallops, params.scallop_d, params.min_wall, cur);
+    const m = suggestPosition(p.fit, p.scoops, params.scoop_d, params.min_wall,
+      cur, params.scoop_mode);
     if (m) {
-      const L = await verify({ scallops: m.scallops });
+      const L = await verify({ scoops: m.scoops });
       if (gen !== suggestGen) return;
-      if (L) move = { scallops: m.scallops, move: m.move, L };
+      if (L) move = { scoops: m.scoops, move: m.move, L };
     }
     suggestions = { size, move };
-    showSuggestions(cur, params.scallop_d);
+    showSuggestions(cur, params.scoop_d);
     window.__suggest = { done: true, size, move };
   } catch (e) {
     if (gen === suggestGen) window.__suggest = { done: true, error: String(e) };
@@ -596,14 +610,14 @@ function showSuggestions(cur, d) {
     btn.hidden = false;
   };
   const { size, move } = suggestions;
-  if (size) set(sgBtns.size, `give: scallops ${d} → ${size.d} mm`, gain(size.L));
+  if (size) set(sgBtns.size, `give: finger scoops ${d} → ${size.d} mm`, gain(size.L));
   if (move) set(sgBtns.move,
-    `give: scallops move ${Math.round(move.move)} mm (hover to preview)`, gain(move.L));
+    `give: finger scoops move ${Math.round(move.move)} mm (hover to preview)`, gain(move.L));
   suggestEl.hidden = !size && !move;
 }
 const previewSuggestion = (kind, on) => {
   const sg = suggestions[kind];
-  previewScallops = on && kind === "move" && sg ? sg.scallops : null;
+  previewScoops = on && kind === "move" && sg ? sg.scoops : null;
   previewD = on && kind === "size" && sg ? sg.d : null;
   if (lastProfileDraw) drawProfile(...lastProfileDraw);
 };
@@ -616,10 +630,10 @@ for (const [kind, btn] of Object.entries(sgBtns)) {
     const sg = suggestions[kind];
     if (!sg) return;
     if (kind === "size") {
-      sliders.scallop.value = sg.d;
+      sliders.scoop.value = sg.d;
       syncSliderLabels();
     } else {
-      customScallops = sg.scallops;
+      customScoops = sg.scoops;
     }
     runProfile();
   });
@@ -645,6 +659,9 @@ function showDepthChoice(choice) {
   if (proud.ok) {
     setText(depthBtns.proud, `give: tool sticks up ${fmtMm(proud.stickout)} mm`,
       `get: ${proud.H} mm bin (${proud.nz}u), ${proud.saveMm} mm shorter`);
+  } else if (proud.why === "engage") {
+    setText(depthBtns.proud, "not available",
+      `tool would stick up ${fmtMm(proud.stickout)} mm — too much of it`);
   } else {
     setText(depthBtns.proud, "not available", "already the shortest bin");
   }
@@ -675,7 +692,9 @@ binPrefix.addEventListener("change", () => {
 });
 
 // revision: R01 for a fresh scan, uprevs when a STEP is dropped back in
-let designRev = 1;
+// and on the first rebuild after an export (the rev is debossed + embedded
+// at build time, so re-exporting an unchanged model keeps its rev)
+let designRev = 1, revExported = false;
 const binThickness = document.getElementById("bin-thickness");
 const optMagnets = document.getElementById("opt-magnets");
 
@@ -911,6 +930,7 @@ async function runBuild() {
     }
     // rev, deboss + magnets are injected at build time: none of them
     // are profile params, so changing them must not force a re-fit
+    if (revExported) { designRev++; revExported = false; }
     const r = await cadApi.build(
       { segs: p.segs, periodic: p.periodic, layout: p.layout,
         center: p.center, pocketPts: p.pocketPts, contour },
@@ -945,6 +965,13 @@ optMagnets.addEventListener("change", markStale);
 optDeboss.addEventListener("change", markStale);
 optEdge.addEventListener("change", runProfile);
 
+// negative body: a second STEP of the plain pocket cutout (remembered)
+const optNegative = document.getElementById("opt-negative");
+try { optNegative.checked = localStorage.getItem("t2b.negative") === "1"; } catch {}
+optNegative.addEventListener("change", () => {
+  try { localStorage.setItem("t2b.negative", optNegative.checked ? "1" : "0"); } catch {}
+});
+
 // spaces are fine in filenames; strip only what filesystems reject
 const cleanName = (s) => s.replace(/[\\/:*?"<>|\x00-\x1f]+/g, "-")
   .replace(/\s+/g, " ").trim();
@@ -964,14 +991,20 @@ exportBtn.addEventListener("click", async () => {
     busyStatus(binStatus, "writing STEP…");
     const stem = `${prefix ? prefix + " " : ""}${name} - ` +
       `${L.nx}X${L.ny}Y${L.nz}Z R${String(designRev).padStart(2, "0")}`;
-    const r = await cadApi.exportStep(name, designRev, stem);
+    const r = await cadApi.exportStep(name, designRev, stem, optNegative.checked);
     const fname = `${stem}.step`;
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([r.text], { type: "application/step" }));
-    a.download = fname;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    binStatus.textContent = `exported ${fname} (${(r.bytes / 1024).toFixed(0)} KB)`;
+    const save = (text, fn) => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([text], { type: "application/step" }));
+      a.download = fn;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+    save(r.text, fname);
+    if (r.negText) save(r.negText, `${stem} NEG.step`);
+    revExported = true;
+    binStatus.textContent = `exported ${fname} (${(r.bytes / 1024).toFixed(0)} KB)` +
+      (r.negText ? ` + ${stem} NEG.step` : "");
   } catch (e) {
     binStatus.textContent = "export error: " + (e.message || e);
   }
@@ -989,14 +1022,45 @@ window.__segmentWarp = async (blob, field) => {
 window.__profileRun = (contourMm, params) =>
   cvRequest({ type: "profile", contourMm, params }, [], 600000);
 
+// the design every export embeds as /* S2S| ... */ comments
+async function readStepDesign(file) {
+  const text = await file.text();
+  const m = [...text.matchAll(/\/\* S2S\| (.*?) \*\//gs)].map((x) => x[1]);
+  if (!m.length) throw new Error("no Tool2Bin design found in this STEP");
+  return JSON.parse(m.join(""));
+}
+
+/** The reusable settings of a saved design: everything about how the
+ *  pocket and bin are made, nothing about the tool itself (outline,
+ *  thickness, scoop spots, pocket depth choice, name, rev). */
+function applySettings(p) {
+  if (p.clearance != null) sliders.clearance.value = p.clearance;
+  if (p.smooth_r != null) sliders.smooth.value = p.smooth_r;
+  if (p.scoop_d != null) sliders.scoop.value = p.scoop_d;
+  if (p.scoop_blend != null) sliders.fillet.value = p.scoop_blend;
+  if (p.min_wall != null) sliders.wall.value = p.min_wall;
+  optSymmetric.checked = p.symmetric !== false;
+  optFlat.checked = !!p.flat_faithful;
+  if (p.max_contour != null) optMax.checked = !!p.max_contour;
+  if (p.strict_contain != null) optStrict.checked = !!p.strict_contain;
+  optScoopMode.value = SCOOP_MODES.includes(p.scoop_mode)
+    ? p.scoop_mode : "mirror";
+  optMagnets.checked = !!(p.magnets && p.magnets.enabled);
+  if (p.magnets && p.magnets.r) {
+    magOd.value = (2 * p.magnets.r).toFixed(2).replace(/\.?0+$/, "");
+    magH.value = (+p.magnets.depth).toFixed(2).replace(/\.?0+$/, "");
+    clampMag(magOd); clampMag(magH);
+  }
+  optDeboss.checked = !(p.deboss && p.deboss.enabled === false);
+  optEdge.value = (p.edge && p.edge.style) || "";
+  syncSliderLabels(); // programmatic sets fire no input events
+}
+
 // drop an exported STEP back in: revise its embedded design, no photo
 async function reviseFromStep(file) {
   busyStatus(scanStatus, "reading STEP design…");
   try {
-    const text = await file.text();
-    const m = [...text.matchAll(/\/\* S2S\| (.*?) \*\//gs)].map((x) => x[1]);
-    if (!m.length) throw new Error("no Tool2Bin design found in this STEP");
-    const design = JSON.parse(m.join(""));
+    const design = await readStepDesign(file);
     if (!design.contour) throw new Error("design has no contour (old export?)");
     window.__warp = null;
     window.__contour = { ok: true, contourMm: design.contour, fromStep: true };
@@ -1005,32 +1069,55 @@ async function reviseFromStep(file) {
     if (three) three.placed = false; // new design: reframe the 3D view
     autoBuild = true; binStale = false; updateStale();
     binName.value = design.name || "tool";
-    designRev = (design.rev || 1) + 1;
-    const p = design.params || {};
+    designRev = (design.rev || 1) + 1; revExported = false;
+    const p = legacyScoopParams(design.params || {});
     if (p.thickness) binThickness.value = p.thickness;
     depthMode = p.depth_mode === "proud" ? "proud" : "flush";
-    if (p.clearance != null) sliders.clearance.value = p.clearance;
-    if (p.smooth_r != null) sliders.smooth.value = p.smooth_r;
-    if (p.scallop_d != null) sliders.scallop.value = p.scallop_d;
-    if (p.min_wall != null) sliders.wall.value = p.min_wall;
-    optSymmetric.checked = p.symmetric !== false;
-    optFlat.checked = !!p.flat_faithful;
-    customScallops = Array.isArray(p.scallops) ? p.scallops : null;
-    optMagnets.checked = !!(p.magnets && p.magnets.enabled);
-    if (p.magnets && p.magnets.r) {
-      magOd.value = (2 * p.magnets.r).toFixed(2).replace(/\.?0+$/, "");
-      magH.value = (+p.magnets.depth).toFixed(2).replace(/\.?0+$/, "");
-      clampMag(magOd); clampMag(magH);
-    }
-    optDeboss.checked = !(p.deboss && p.deboss.enabled === false);
-    optEdge.value = (p.edge && p.edge.style) || "";
-    syncSliderLabels(); // programmatic sets fire no input events
+    applySettings(p);
+    customScoops = Array.isArray(p.scoops) ? p.scoops : null;
     scanStatus.textContent = `revising '${design.name}' from its embedded ` +
       `design (next export is R${String(designRev).padStart(2, "0")})`;
     await runProfile();
   } catch (e) {
     scanStatus.textContent = "error: " + e.message;
   }
+}
+
+// reuse a good bin's settings: copy them from its STEP onto the design
+// that's open now (refit, 3D goes stale); they stay for the next photo
+async function settingsFromStep(file) {
+  try {
+    const design = await readStepDesign(file);
+    applySettings(legacyScoopParams(design.params || {}));
+    const rev = design.rev ? ` R${String(design.rev).padStart(2, "0")}` : "";
+    scanStatus.textContent = `settings from '${design.name || "tool"}${rev}' ` +
+      `applied — tool shape, thickness and scoop spots are untouched`;
+    window.__settingsFrom = { name: design.name, rev: design.rev };
+    customScoops = null; // re-place the scoops for the copied mode
+    await runProfile(); // no-op until a design is open
+  } catch (e) {
+    scanStatus.textContent = "settings error: " + e.message;
+  }
+}
+
+// a STEP opened while a tool is open: revise it, or take only its
+// settings (one file input for everything — owner rule)
+const stepChoice = document.getElementById("step-choice");
+let pendingStep = null;
+function askStep(file) {
+  pendingStep = file;
+  document.getElementById("step-choice-head").textContent =
+    `'${file.name}' — what should it do?`;
+  stepChoice.hidden = false;
+}
+for (const [id, fn] of [["step-revise", reviseFromStep],
+                        ["step-settings", settingsFromStep]]) {
+  document.getElementById(id).addEventListener("click", () => {
+    const f = pendingStep;
+    pendingStep = null;
+    stepChoice.hidden = true;
+    if (f) fn(f);
+  });
 }
 
 // name + thickness gate: a photo is held until both are entered (the
@@ -1065,7 +1152,12 @@ startScan.addEventListener("click", () => {
 
 function handleFile(file) {
   if (!file) return;
-  if (/\.ste?p$/i.test(file.name)) return reviseFromStep(file);
+  pendingStep = null;
+  stepChoice.hidden = true;
+  if (/\.ste?p$/i.test(file.name)) {
+    return window.__contour && window.__contour.ok
+      ? askStep(file) : reviseFromStep(file);
+  }
   return gatePhoto(file);
 }
 

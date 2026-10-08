@@ -1,5 +1,5 @@
 // Stage 4-5 driver: mirror of server.compute_profile / layout /
-// auto_scallops / profile_response (the profile-side subset; bin
+// auto_scoops / profile_response (the profile-side subset; bin
 // construction is C5). Adds two app-side features the reference does
 // not have, both OFF by default so parity against the oracle holds:
 //   maxContour     — pocket derives from the convex hull of the tool
@@ -14,7 +14,7 @@
 //                    inflation overshoots there by design), so flat
 //                    tool edges stay flat on a lower smoothing rung.
 import {
-  symmetrizeContour, offsetContour, smoothProfile, addScallops, closedOutline,
+  symmetrizeContour, offsetContour, smoothProfile, addScoops, closedOutline,
   periodicFit, rasterize, sdf, fillMask, bbox, ccw, PX, LAM_BASE,
 } from "./smoothprof.js";
 import { evalPeriodic } from "./bspline.js";
@@ -25,6 +25,7 @@ import { findContours } from "./marching.js";
 export const GRID = 42.0;
 export const GAP = 0.5;
 export const MIN_FLOOR = 7.0; // mm under the pocket; feet are 4.75 mm tall
+export const MIN_ENGAGE = 0.75; // shorter bin must hold >= this much of the tool
 
 /** Andrew monotone chain, CCW hull of mm points. */
 export function convexHull(pts) {
@@ -80,20 +81,24 @@ export function layout(fitPts, thickness, minWall, mode = "flush") {
 /** The two pocket choices. flush: full-depth pocket, bin rounded UP to
  *  whole 7 mm units so the floor is never < MIN_FLOOR. proud: one unit
  *  shorter, pocket = exactly MIN_FLOOR of floor, tool stands `stickout`
- *  above the rim (always < 7 mm and <= half the tool, since flush only
- *  rounds up by < one unit) — ok whenever the shorter bin still has room
- *  for a pocket. */
+ *  above the rim (always <= 7 mm, since flush only rounds up by < one
+ *  unit) — ok only when the shorter bin still has room for a pocket AND
+ *  that pocket holds >= MIN_ENGAGE of the tool (owner, 2026-10-08: a
+ *  thin tool half out of its pocket isn't worth 7 mm). `why` says which
+ *  rule refused it. */
 export function depthOptions(thickness) {
   const nzF = Math.max(1, Math.ceil((thickness + MIN_FLOOR) / 7.0 - 1e-9));
   const flush = { mode: "flush", ok: true, nz: nzF, H: nzF * 7.0,
                   depth: thickness, stickout: 0, saveMm: 0 };
   const nz = nzF - 1, H = nz * 7.0, depth = H - MIN_FLOOR;
+  const why = depth <= 0 ? "shortest"
+    : depth < MIN_ENGAGE * thickness - 1e-9 ? "engage" : null;
   const proud = { mode: "proud", nz, H, depth, stickout: thickness - depth,
-                  saveMm: 7.0, ok: depth > 0 };
+                  saveMm: 7.0, ok: why === null, why };
   return { flush, proud };
 }
 
-function snap(fitPts, pt) {
+export function snap(fitPts, pt) {
   let best = Infinity, bi = 0;
   fitPts.forEach(([x, y], i) => {
     const d = Math.hypot(x - pt[0], y - pt[1]);
@@ -102,19 +107,58 @@ function snap(fitPts, pt) {
   return [fitPts[bi][0], fitPts[bi][1]];
 }
 
-export function autoScallops(fitPts) {
+/** The mirrored partner of scoop spot p: the far end of the outline's
+ *  horizontal chord through p, so the pair sits at the SAME height even
+ *  on a curved tool (snapping p's x-mirror to the nearest outline point
+ *  drifted up or down the far edge). Snapped to a fit point — on a
+ *  symmetric outline that's the x-mirror, as before. */
+export function chordPartner(fitPts, p) {
+  let far = null;
+  for (let i = 0; i < fitPts.length; i++) {
+    const [x0, y0] = fitPts[i], [x1, y1] = fitPts[(i + 1) % fitPts.length];
+    if ((y0 - p[1]) * (y1 - p[1]) > 0 || y0 === y1) continue;
+    const x = x0 + (x1 - x0) * (p[1] - y0) / (y1 - y0);
+    if (!far || Math.abs(x - p[0]) > Math.abs(far[0] - p[0])) far = [x, p[1]];
+  }
+  return snap(fitPts, far || [-p[0], p[1]]);
+}
+
+/** Scoop modes: "mirror" (pair, same height, dragged together), "free"
+ *  (pair, dragged independently), "left" / "right" (one scoop). */
+export const SCOOP_MODES = ["mirror", "free", "left", "right"];
+
+export function autoScoops(fitPts, mode = "mirror") {
   let cy = 0, minX = Infinity;
   for (const [x, y] of fitPts) { cy += y; if (x < minX) minX = x; }
   cy /= fitPts.length;
   const left = snap(fitPts, [minX - 5, cy]);
-  const right = snap(fitPts, [-left[0], left[1]]);
+  const right = chordPartner(fitPts, left);
+  if (mode === "left") return [left];
+  if (mode === "right") return [right];
   return [left, right];
+}
+
+/** Re-shape the spots on screen for a new mode: a lone spot gains its
+ *  mirrored partner, mirror re-pairs on the left spot, left/right keep
+ *  that side's spot. */
+export function scoopsForMode(fitPts, spots, mode) {
+  if (!spots || !spots.length) return null;
+  const pair = spots.length > 1 ? spots.map((p) => p.slice())
+    : [spots[0], chordPartner(fitPts, spots[0])];
+  // side = which end of its own horizontal chord a spot is on (plain x
+  // misorders them on a slanted tool)
+  const side = (p) => p[0] - chordPartner(fitPts, p)[0];
+  pair.sort((a, b) => side(a) - side(b));
+  if (mode === "left") return [pair[0]];
+  if (mode === "right") return [pair[1]];
+  if (mode === "mirror") return [pair[0], chordPartner(fitPts, pair[0])];
+  return pair;
 }
 
 /** strictContain post-pass: union the pocket with tool+clearance, refit. */
 function containmentUnion(c, pocketPts, toolMm, clearance, log) {
   const margin = clearance + 8.0;
-  // the canvas must cover the pocket as well as the tool: scallop lobes
+  // the canvas must cover the pocket as well as the tool: scoop lobes
   // reach well past the tool bbox, and a pocket clipped at the canvas
   // edge shatters the union contour into open border fragments that the
   // periodic refit then closes into garbage
@@ -174,7 +218,7 @@ function containmentUnion(c, pocketPts, toolMm, clearance, log) {
   // depends on it — a CW refit here shipped bins with no pocket chamfer
   let poly = ccw(
     bestC.map(([r, col]) => [col / PX + origin[0], r / PX + origin[1]]));
-  // light refit so the result is a spline again (tight cap, like scallops)
+  // light refit so the result is a spline again (tight cap, like scoops)
   const step = 0.2;
   const q = [];
   {
@@ -240,10 +284,10 @@ function contourKey(cMm) {
 
 // Stage cache, last result per stage. A tweak re-runs only the stages
 // whose inputs changed: thickness / depth / wall touch layout alone,
-// scallop moves skip the smooth fit (the expensive part). Every stage
+// scoop moves skip the smooth fit (the expensive part). Every stage
 // is deterministic, so a hit returns exactly what a re-run would.
 const stageCache = { src: null, base: null, cut: [] }; // cut: LRU, newest last
-const CUT_KEEP = 4; // scallop suggestions probe a few variants per fit
+const CUT_KEEP = 4; // scoop suggestions probe a few variants per fit
 export function clearProfileCache() {
   stageCache.src = null; stageCache.base = null; stageCache.cut = [];
 }
@@ -272,7 +316,7 @@ function sourceContour(c, cMm, params, log, timed) {
   return cSrc;
 }
 
-/** Fast approximate pocket (no spline fit, no scallops): the closed,
+/** Fast approximate pocket (no spline fit, no scoops): the closed,
  *  clearance-grown outline the smooth fit approximates — shown while
  *  the real fit runs after a clearance / smoothness change. */
 export function quickPocket(c, cMm, params) {
@@ -287,14 +331,31 @@ export function quickPocket(c, cMm, params) {
            ms: Math.round(performance.now() - t0) };
 }
 
+/** Finger scoops were "scallops" in the PoC (oracle params) and in STEP
+ *  designs exported before 2026-10-08: map those keys to the scoop_*
+ *  names, new names winning. */
+const LEGACY_SCOOP_KEYS = { scallop_d: "scoop_d", scallop_blend: "scoop_blend",
+                            scallop_mode: "scoop_mode", scallops: "scoops" };
+export function legacyScoopParams(params) {
+  const out = { ...params };
+  for (const [o, n] of Object.entries(LEGACY_SCOOP_KEYS)) {
+    if (o in out) {
+      if (!(n in out)) out[n] = out[o];
+      delete out[o];
+    }
+  }
+  return out;
+}
+
 /** Port of server.profile_response (profile side only). */
 export function profileResponse(c, cMm, params, log = () => {}) {
+  params = legacyScoopParams(params);
   const clearance = +(params.clearance ?? 1.0);
   const smoothR = +(params.smooth_r ?? 8.0);
   const thickness = +(params.thickness ?? 25.0);
   const minWall = +(params.min_wall ?? 3.0);
-  const scallopD = +(params.scallop_d ?? 25.0);
-  const scallopBlend = +(params.scallop_blend ?? 4.0);
+  const scoopD = +(params.scoop_d ?? 25.0);
+  const scoopBlend = +(params.scoop_blend ?? 4.0);
   const timings = {};
   const timed = (name, fn) => {
     const t0 = performance.now();
@@ -320,9 +381,14 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     stageCache.cut = [];
   }
   const prof = base.prof;
-  const scallops = params.scallops || autoScallops(prof.fit);
+  // given spots (dragged, or saved in a STEP design from before modes)
+  // are re-shaped to the mode, so a mirrored pair is always level
+  const scoopMode = params.scoop_mode || "mirror";
+  const scoops = params.scoops
+    ? scoopsForMode(prof.fit, params.scoops, scoopMode) || []
+    : autoScoops(prof.fit, scoopMode);
 
-  const cutKey = JSON.stringify([baseKey, scallops, scallopD, scallopBlend,
+  const cutKey = JSON.stringify([baseKey, scoops, scoopD, scoopBlend,
     !!params.strict_contain]);
   let cut = stageCache.cut.find((e) => e.key === cutKey) || null;
   const cutHit = !!cut;
@@ -336,9 +402,9 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     const logs = [];
     const clog = (l) => { logs.push(l); log(l); };
     let segs = prof.segs, periodic = prof.periodic, pts = prof.fit;
-    if (scallopD > 0 && scallops.length) {
-      const s = timed("scallops", () =>
-        addScallops(c, prof.fit, scallops, scallopD, scallopBlend, clog));
+    if (scoopD > 0 && scoops.length) {
+      const s = timed("scoops", () =>
+        addScoops(c, prof.fit, scoops, scoopD, scoopBlend, clog));
       segs = [s.tck]; periodic = true; pts = s.pts;
     }
     const cutWarnings = [];
@@ -346,7 +412,7 @@ export function profileResponse(c, cMm, params, log = () => {}) {
       const fixed = timed("contain", () =>
         containmentUnion(c, pts, cMm, clearance, clog));
       if (fixed && fixed.failed) {
-        cutWarnings.push("containment fix-up failed -- lower scallop/clearance or re-scan");
+        cutWarnings.push("containment fix-up failed -- lower scoop/clearance or re-scan");
       } else if (fixed) {
         segs = [fixed.tck]; periodic = true; pts = fixed.pts;
       }
@@ -365,7 +431,7 @@ export function profileResponse(c, cMm, params, log = () => {}) {
   return {
     segs: cutSegs, periodic: cutPeriodic, fit: prof.fit, pocketPts,
     layout: { nx: L.nx, ny: L.ny, nz: L.nz, H: L.H, depth: L.depth },
-    center: L.bboxC, scallops, warnings,
+    center: L.bboxC, scoops, warnings,
     depthChoice: { mode: L.mode, options: L.options },
     timings, cached: { base: baseHit, cut: cutHit },
   };

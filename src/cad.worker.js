@@ -6,7 +6,9 @@ import { expose } from "comlink";
 import opencascade from "replicad-opencascadejs/src/replicad_single.js";
 import opencascadeWasm from "replicad-opencascadejs/src/replicad_single.wasm?url";
 import { setOC, makeBaseBox } from "replicad";
-import { buildBin, tessellate, bbox, writeStepText, tryCut } from "./bin3d.js";
+import {
+  buildBin, tessellate, bbox, writeStepText, tryCut, pocketBody,
+} from "./bin3d.js";
 import { ensureDebossFont, debossCutter } from "./deboss.js";
 import debossFontUrl from "./assets/t2b-rev-bold.ttf?url";
 
@@ -78,7 +80,7 @@ async function build(profile, params) {
   };
 }
 
-async function exportStep(name, rev = 1, label = null) {
+async function exportStep(name, rev = 1, label = null, negative = false) {
   const oc = await init();
   if (!lastBuild) throw new Error("no bin built yet");
   const design = {
@@ -89,7 +91,16 @@ async function exportStep(name, rev = 1, label = null) {
   };
   const text = writeStepText(oc, lastBuild.shape,
     { name: label || `${name} bin`, design });
-  return { ok: true, text, bytes: text.length };
+  let negText = null;
+  if (negative) {
+    const { segs, periodic } = lastBuild.profile;
+    const body = pocketBody(oc, segs, periodic, lastBuild.H - lastBuild.depth,
+      lastBuild.H);
+    negText = writeStepText(oc, body,
+      { name: `${label || name} negative` });
+    body.delete();
+  }
+  return { ok: true, text, bytes: text.length, negText };
 }
 
 expose({ helloStep, build, exportStep });

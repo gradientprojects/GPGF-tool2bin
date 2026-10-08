@@ -68,11 +68,23 @@ test("3D model waits for Rebuild; export rebuilds a stale model", async ({ page 
   expect(await sameBin(page)).toBe(true);
 
   // Download STEP on a stale model rebuilds first
-  const dl = page.waitForEvent("download", { timeout: 120000 });
-  await page.click("#export-step");
-  await dl;
+  const exportName = async () => {
+    const dl = page.waitForEvent("download", { timeout: 120000 });
+    await page.click("#export-step");
+    return (await dl).suggestedFilename();
+  };
+  expect(await exportName()).toMatch(/ R01\.step$/);
   expect(await sameBin(page)).toBe(false);
   await expect(stale).toBeHidden();
   const logs = await page.evaluate(() => window.__bin.logs.join(" | "));
   expect(logs).not.toContain("rev deboss");
+
+  // revisions: re-exporting an unchanged model keeps its rev; the first
+  // rebuild after an export (here forced by Download STEP) uprevs
+  expect(await exportName()).toMatch(/ R01\.step$/);
+  await idle(page);
+  await page.check("#opt-deboss");
+  await expect(stale).toBeVisible();
+  expect(await exportName()).toMatch(/ R02\.step$/);
+  expect(await exportName()).toMatch(/ R02\.step$/);
 });

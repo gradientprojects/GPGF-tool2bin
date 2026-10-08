@@ -33,7 +33,7 @@ account, no tracking. After the first load it works offline (PWA).
 3. The app perspective-corrects the sheet via the ArUco border,
    segments the tool with illumination-normalized scoring, finds its
    symmetry axis, and fits a smooth pocket profile — clearance,
-   smoothness, finger scallops, symmetry and wall thickness are all
+   smoothness, finger scoops, symmetry and wall thickness are all
    live controls.
 4. A full Gridfinity bin (42 mm grid, standard foot profile, optional
    6 mm magnet pockets, chamfered rim) is built in OpenCASCADE —

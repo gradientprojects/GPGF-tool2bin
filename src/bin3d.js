@@ -209,6 +209,10 @@ function treatEdges(oc, shape, edges, style, size, label, log) {
  *  (NOTE: SetNotPeriodic-clamped closed wires ABORT ThruSections in this
  *  OCCT 7.6 wasm — do not try that route again; see changelog 2026-10-04.) */
 function profileEdge(oc, tck, z, periodic) {
+  return edgeFromCurve(oc, asCurveHandle(oc, profileGeom(oc, tck, z, periodic)));
+}
+
+function profileGeom(oc, tck, z, periodic) {
   let geom;
   if (periodic) {
     const { C, k } = tck;
@@ -243,13 +247,33 @@ function profileEdge(oc, tck, z, periodic) {
     uk.forEach((v, i) => { knots.SetValue(i + 1, v); mults.SetValue(i + 1, um[i]); });
     geom = new oc.Geom_BSplineCurve_1(poles, knots, mults, k, false);
   }
+  return geom;
+}
+
+/** The pocket prism's outline wire. A closed (periodic) profile goes in
+ *  CLAMPED: one edge, end knots of full multiplicity, first pole = last
+ *  pole. OCCT 7.6 writes a periodic B-spline to STEP unclamped (knots
+ *  past [0, 1], all mult 1), and Onshape's Parasolid drops the pocket
+ *  floor bounded by it geometry-dependently while every OCCT check
+ *  passes (owner Onshape A/B, 2026-10-08: periodic failed, clamped
+ *  imported, splitting into two edges opened a hole at the split). Only
+ *  the prism — ThruSections sections stay periodic (see NOTE above). */
+/** closed periodic tck -> CLAMPED closed B-spline edge at height z.
+ *  SetNotPeriodic alone keeps the unclamped (extended) knot vector and
+ *  writes the same STEP; Segment over the full range clamps it. Every
+ *  tck with the same knots clamps to the same knot vector. */
+function clampedEdge(oc, tck, z) {
+  const geom = profileGeom(oc, tck, z, true);
+  const a = geom.FirstParameter(), b = geom.LastParameter();
+  geom.SetNotPeriodic();
+  geom.Segment(a, b, 1e-9);
   return edgeFromCurve(oc, asCurveHandle(oc, geom));
 }
 
 function profileWire(oc, segs, periodic, z) {
   const mw = new oc.BRepBuilderAPI_MakeWire_1();
   if (periodic) {
-    mw.Add_1(profileEdge(oc, segs[0], z, true));
+    mw.Add_1(clampedEdge(oc, segs[0], z));
   } else {
     for (const tck of segs) mw.Add_1(profileEdge(oc, tck, z, false));
     if (!mw.IsDone()) throw new Error("wire gap: segment endpoints do not connect");
@@ -338,7 +362,7 @@ function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log) {
     const { C, k } = segs[0];
     const n = C.length;
     // Pole normals over a ~2.5 mm baseline, not adjacent poles: dense
-    // refit tcks (1.25 mm knots after scallops / strict containment)
+    // refit tcks (1.25 mm knots after scoops / strict containment)
     // carry high-frequency wiggle in the control polygon, and
     // neighbor-difference normals then point erratically — the offset
     // wire folds inside the wall and the flare cuts nothing there
@@ -369,7 +393,7 @@ function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log) {
     mkWire = (off, z) => {
       const C2 = C.map((p, i) => [p[0] + nrmP[i][0] * off, p[1] + nrmP[i][1] * off]);
       const mw = new oc.BRepBuilderAPI_MakeWire_1();
-      mw.Add_1(profileEdge(oc, { C: C2, k }, z, true));
+      mw.Add_1(clampedEdge(oc, { C: C2, k }, z));
       const w = mw.Wire();
       mw.delete();
       return w;
@@ -416,6 +440,15 @@ function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log) {
   return s;
 }
 
+/** The negative body: the pocket cutout as its own solid — the same
+ *  clamped outline prism the bin is cut with (scoops included), from the
+ *  floor up to the rim, flush (no +1 overshoot, no entry chamfer, no
+ *  magnets). Same coordinates as the bin. */
+export function pocketBody(oc, segs, periodic, floor, H) {
+  return prism(oc, faceFromWire(oc, profileWire(oc, segs, periodic, floor)),
+    H - floor);
+}
+
 export function cellCenters(nx, ny) {
   const out = [];
   for (let i = 0; i < nx; i++) {
@@ -456,8 +489,13 @@ export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   const pocket = prism(oc, faceFromWire(oc, profileWire(oc, segs, periodic, floor)),
     depth + 1);
   const cutters = [pocket];
-  if ((edgeStyle === "fillet" || edgeStyle === "chamfer") && edgeSize > 0 &&
-      pocketPts) {
+  const entry = (edgeStyle === "fillet" || edgeStyle === "chamfer") && edgeSize > 0;
+  // Closed outlines: the pocket wall is CLAMPED (see profileWire), so a
+  // ThruSections flare (periodic sections; clamped ones abort the wasm)
+  // would meet it in a different knot basis — Onshape rejected every
+  // such bin (owner, 2026-10-08). Treat the rim edge itself instead,
+  // after the cut. Segmented outlines keep the reference cutter.
+  if (entry && pocketPts) {
     cutters.push(pocketEntryCutter(oc, segs, periodic, pocketPts, edgeSize, H,
       edgeStyle, log));
   }

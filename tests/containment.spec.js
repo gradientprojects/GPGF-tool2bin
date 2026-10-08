@@ -67,7 +67,7 @@ function maxBulgeOf(c, poly, pts) {
 }
 
 const PARAMS = { thickness: 25, clearance: 1.0, smooth_r: 8.0, min_wall: 3.0,
-                 scallop_d: 25.0, scallop_blend: 4.0, symmetric: false };
+                 scoop_d: 25.0, scoop_blend: 4.0, symmetric: false };
 
 test("strict_contain: pocket clears the tool everywhere", async () => {
   test.setTimeout(240000);
@@ -88,18 +88,18 @@ test("strict_contain: pocket clears the tool everywhere", async () => {
   expect(a2).toBeGreaterThan(0);
 });
 
-// Regression: a tall tool whose 25 mm scallop lobes reach past the
+// Regression: a tall tool whose 25 mm scoop lobes reach past the
 // tool bbox + the union canvas margin. The union canvas used to be
 // sized from the tool alone; the clipped pocket shattered the union
 // contour at the canvas border and the refit produced a pocket that
 // cut off the bottom half of the tool (min clearance -9.4 mm).
-test("strict_contain: scallop lobes past the tool bbox stay on canvas", async () => {
+test("strict_contain: scoop lobes past the tool bbox stay on canvas", async () => {
   test.setTimeout(240000);
   const c = await cvReady();
   const tall = JSON.parse(
     fs.readFileSync(path.join(FIX, "tall_tool.json"), "utf8")).tool;
   const r = profileResponse(c, tall, { thickness: 25, clearance: 1.5,
-    smooth_r: 0, min_wall: 3.0, scallop_d: 25.0, scallop_blend: 4.0,
+    smooth_r: 0, min_wall: 3.0, scoop_d: 25.0, scoop_blend: 4.0,
     symmetric: true, strict_contain: true });
   const mc = minClearanceOf(c, tall, r.pocketPts);
   console.log(`tall-tool strict min clearance: ${mc.toFixed(4)} mm`);
@@ -114,9 +114,9 @@ test("strict_contain: scallop lobes past the tool bbox stay on canvas", async ()
 test("max_contour: pocket ignores the concave notch and clears the hull", async () => {
   test.setTimeout(240000);
   const c = await cvReady();
-  const base = profileResponse(c, tool, { ...PARAMS, scallop_d: 0 });
+  const base = profileResponse(c, tool, { ...PARAMS, scoop_d: 0 });
   const r = profileResponse(c, tool,
-    { ...PARAMS, scallop_d: 0, max_contour: true, strict_contain: true });
+    { ...PARAMS, scoop_d: 0, max_contour: true, strict_contain: true });
   const hull = convexHull(tool);
   const mcHull = minClearanceOf(c, hull, r.pocketPts);
   console.log(`max_contour min clearance to hull: ${mcHull.toFixed(4)} mm`);
@@ -134,23 +134,23 @@ test("max_contour: pocket ignores the concave notch and clears the hull", async 
   expect(area(r.pocketPts)).toBeGreaterThan(area(base.pocketPts) + 1);
 });
 
-// Custom scallop centers (draggable dots in the UI): the worker uses
+// Custom scoop centers (draggable dots in the UI): the worker uses
 // the passed positions instead of auto-placement and echoes them back.
-test("params.scallops overrides auto placement and still clears", async () => {
+test("params.scoops overrides auto placement and still clears", async () => {
   test.setTimeout(240000);
   const c = await cvReady();
   const auto = profileResponse(c, tool, PARAMS);
-  // move both scallops to the top edge of the auto fit
+  // move both scoops to the top edge of the auto fit
   const topY = auto.fit.reduce((m, p) => Math.max(m, p[1]), -Infinity);
   const pick = (sx) => auto.fit.reduce((b, p) =>
     Math.abs(p[1] - topY) < 2 && Math.abs(p[0] - sx) < Math.abs(b[0] - sx)
       ? p : b, [Infinity, 0]);
   const custom = [pick(-20), pick(20)];
-  const r = profileResponse(c, tool, { ...PARAMS, scallops: custom });
-  expect(r.scallops).toEqual(custom);
-  expect(r.scallops).not.toEqual(auto.scallops);
+  const r = profileResponse(c, tool, { ...PARAMS, scoops: custom });
+  expect(r.scoops).toEqual(custom);
+  expect(r.scoops).not.toEqual(auto.scoops);
   const mc = minClearanceOf(c, tool, r.pocketPts);
-  console.log(`custom-scallop min clearance: ${mc.toFixed(4)} mm`);
+  console.log(`custom-scoop min clearance: ${mc.toFixed(4)} mm`);
   expect(mc).toBeGreaterThanOrEqual(PARAMS.clearance - 0.05 - 1e-6);
 });
 
@@ -164,7 +164,7 @@ test("flat_faithful: flats stay flat on a rectangle tool", async () => {
   const c = await cvReady();
   const rect = [[-70, -10], [70, -10], [70, 10], [-70, 10]];
   const P = { thickness: 25, clearance: 1.0, smooth_r: 8.0, min_wall: 3.0,
-              scallop_d: 0, scallop_blend: 4.0, symmetric: false };
+              scoop_d: 0, scoop_blend: 4.0, symmetric: false };
   const onFlats = (pts) =>
     pts.filter(([x, y]) => Math.abs(x) <= 55 && Math.abs(y) >= 5);
   const loose = profileResponse(c, rect, P);
