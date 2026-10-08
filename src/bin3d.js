@@ -21,7 +21,7 @@ export const FOOT_H = CH1 + STRAIGHT + CH2;
 export const FOOT_BOT = FOOT_TOP - 2 * (CH1 + CH2);
 export const R_BOT = R_TOP - (CH1 + CH2);
 export const MAG_OFF = 13.0;
-export const MIN_FLOOR = 5.0;
+export const MIN_FLOOR = 7.0; // mm under the pocket; feet are 4.75 mm tall
 
 const asCurveHandle = (oc, geom) => new oc.Handle_Geom_Curve_2(geom);
 

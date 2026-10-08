@@ -24,7 +24,7 @@ import { findContours } from "./marching.js";
 
 export const GRID = 42.0;
 export const GAP = 0.5;
-export const MIN_FLOOR = 5.0;
+export const MIN_FLOOR = 7.0; // mm under the pocket; feet are 4.75 mm tall
 
 /** Andrew monotone chain, CCW hull of mm points. */
 export function convexHull(pts) {
@@ -60,7 +60,9 @@ export function computeProfile(c, cMm, clearance, smoothR, log = () => {},
   return { segs, periodic: false, fit: pts.flat(), extra: {} };
 }
 
-export function layout(fitPts, thickness, minWall) {
+/** mode "flush" | "proud" picks one of depthOptions(); "proud" falls
+ *  back to flush when no shorter bin is allowed. */
+export function layout(fitPts, thickness, minWall, mode = "flush") {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [x, y] of fitPts) {
     if (x < x0) x0 = x; if (y < y0) y0 = y;
@@ -68,15 +70,27 @@ export function layout(fitPts, thickness, minWall) {
   }
   const nx = Math.ceil((x1 - x0 + 2 * minWall + GAP) / GRID);
   const ny = Math.ceil((y1 - y0 + 2 * minWall + GAP) / GRID);
-  const nz = Math.max(1, roundHalfEven((thickness + 7.0) / 7.0));
-  const H = nz * 7.0;
-  let depth = thickness, proud = 0.0;
-  if (H - depth < MIN_FLOOR) {
-    depth = H - MIN_FLOOR;
-    proud = thickness - depth;
-  }
-  return { nx, ny, nz, H, depth, proud,
+  const options = depthOptions(thickness);
+  const pick = mode === "proud" && options.proud.ok ? options.proud : options.flush;
+  return { nx, ny, nz: pick.nz, H: pick.H, depth: pick.depth,
+           proud: pick.stickout, mode: pick.mode, options,
            bboxC: [(x1 + x0) / 2, (y1 + y0) / 2] };
+}
+
+/** The two pocket choices. flush: full-depth pocket, bin rounded UP to
+ *  whole 7 mm units so the floor is never < MIN_FLOOR. proud: one unit
+ *  shorter, pocket = exactly MIN_FLOOR of floor, tool stands `stickout`
+ *  above the rim (always < 7 mm and <= half the tool, since flush only
+ *  rounds up by < one unit) — ok whenever the shorter bin still has room
+ *  for a pocket. */
+export function depthOptions(thickness) {
+  const nzF = Math.max(1, Math.ceil((thickness + MIN_FLOOR) / 7.0 - 1e-9));
+  const flush = { mode: "flush", ok: true, nz: nzF, H: nzF * 7.0,
+                  depth: thickness, stickout: 0, saveMm: 0 };
+  const nz = nzF - 1, H = nz * 7.0, depth = H - MIN_FLOOR;
+  const proud = { mode: "proud", nz, H, depth, stickout: thickness - depth,
+                  saveMm: 7.0, ok: depth > 0 };
+  return { flush, proud };
 }
 
 function snap(fitPts, pt) {
@@ -246,10 +260,7 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     }
   }
 
-  const L = layout(pocketPts, thickness, minWall);
-  if (L.proud > 0) {
-    warnings.push(`pocket depth clamped; tool sits ${L.proud.toFixed(1)} mm proud`);
-  }
+  const L = layout(pocketPts, thickness, minWall, params.depth_mode || "flush");
   if ((prof.extra.minClearance ?? clearance) < clearance - 0.05 && !params.strict_contain) {
     warnings.push("containment not met -- lower smoothness or clearance");
   }
@@ -257,5 +268,6 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     segs: cutSegs, periodic: cutPeriodic, fit: prof.fit, pocketPts,
     layout: { nx: L.nx, ny: L.ny, nz: L.nz, H: L.H, depth: L.depth },
     center: L.bboxC, scallops, warnings,
+    depthChoice: { mode: L.mode, options: L.options },
   };
 }

@@ -142,6 +142,7 @@ async function profile({ contourMm = null, params = {} }) {
   // segs (tck data) ride along: the CAD worker builds the solid from them
   return { ok: true, fit: r.fit, pocketPts: r.pocketPts, layout: r.layout,
     center: r.center, scallops: r.scallops, warnings: r.warnings,
+    depthChoice: r.depthChoice,
     periodic: r.periodic, segs: r.segs, logs,
     ms: Math.round(performance.now() - t0) };
 }

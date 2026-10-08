@@ -97,8 +97,7 @@
           <li>sets the pocket depth — measure the tool at its thickest</li>
           <li>required before the scan starts</li>
           <li>bin height rounds up in 7 mm Gridfinity units, always
-            keeping a &ge;5 mm floor (very thick tools sit a little
-            proud)</li>
+            keeping a &ge;7 mm floor under the pocket</li>
         </ul></div>
       </div>
       <div class="optrow" id="scan-gate" style="display:none">
@@ -148,6 +147,21 @@
             evens out lighting artifacts on symmetric tools</li>
           <li>turn off for genuinely asymmetric ones</li>
         </ul></div>
+      </div>
+      <div class="optrow">
+        <div class="choicehead">pocket depth</div>
+        <div class="choices" role="radiogroup" aria-label="pocket depth">
+          <button type="button" class="choice" id="depth-flush"
+            role="radio" aria-checked="true">
+            <b>Flush</b><span class="give"></span><span class="get"></span>
+          </button>
+          <button type="button" class="choice" id="depth-proud"
+            role="radio" aria-checked="false">
+            <b>Shorter bin</b><span class="give"></span><span class="get"></span>
+          </button>
+        </div>
+        <div class="sub">either way the pocket ends &ge;7 mm above the
+          bin&rsquo;s bottom</div>
       </div>
       <div id="sliders">
         <label class="slrow">clearance

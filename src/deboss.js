@@ -8,7 +8,7 @@
 //
 // Printability: at 9 mm cap height Inter Bold stems are ~1.8 mm —
 // comfortable from 0.25 to 0.8 mm nozzles — and 0.4 mm depth is two
-// standard layers against a floor that is never thinner than 5 mm.
+// standard layers against a floor that is never thinner than 7 mm.
 // Geometry: 9 mm-tall text centered in a cell cannot reach the magnet
 // pockets (rims at |x|,|y| = 13 ± 4) or the foot chamfer (the flat is
 // 35.6 mm wide); width is clamped to the flat regardless.

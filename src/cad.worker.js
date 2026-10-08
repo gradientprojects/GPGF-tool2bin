@@ -47,7 +47,7 @@ async function build(profile, params) {
   const edge = params.edge || {};
   let { shape, depth, H } = buildBin(oc, profile.segs, profile.periodic,
     profile.layout.nx, profile.layout.ny, profile.layout.nz,
-    +(params.thickness ?? 25), {
+    profile.layout.depth, {
       magnets, edgeStyle: edge.style || null, edgeSize: +(edge.size || 0),
       center: profile.center, pocketPts: profile.pocketPts,
       log: (l) => logs.push(l),

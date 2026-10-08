@@ -377,6 +377,7 @@ optFlat.addEventListener("change", () => runProfile());
 function currentParams() {
   return {
     thickness: +binThickness.value || 25,
+    depth_mode: depthMode,
     clearance: +sliders.clearance.value,
     smooth_r: +sliders.smooth.value,
     scallop_d: +sliders.scallop.value,
@@ -412,6 +413,7 @@ async function runProfile() {
       `${(L.ny * 42 - 0.5).toFixed(1)}×${L.H} mm), pocket depth ${L.depth} mm` +
       (r.warnings.length ? ` — ⚠ ${r.warnings.join("; ")}` : "") +
       ` (${(r.ms / 1000).toFixed(1)}s)`;
+    showDepthChoice(r.depthChoice);
     await runBuild();
   } catch (e) {
     window.__profile = { ok: false, error: String(e) };
@@ -420,6 +422,41 @@ async function runProfile() {
 }
 optMax.addEventListener("change", runProfile);
 optStrict.addEventListener("change", runProfile);
+
+// pocket depth: flush (full-depth pocket) or one bin unit shorter with
+// the tool standing proud. Each button states what it gives and gets.
+let depthMode = "flush";
+const depthBtns = {
+  flush: document.getElementById("depth-flush"),
+  proud: document.getElementById("depth-proud"),
+};
+const fmtMm = (v) => v.toFixed(1).replace(/\.0$/, "");
+function showDepthChoice(choice) {
+  const { flush, proud } = choice.options;
+  const setText = (btn, give, get) => {
+    btn.querySelector(".give").textContent = give;
+    btn.querySelector(".get").textContent = get;
+  };
+  setText(depthBtns.flush, "tool level with the top",
+    `${flush.H} mm bin (${flush.nz}u)`);
+  if (proud.ok) {
+    setText(depthBtns.proud, `give: tool sticks up ${fmtMm(proud.stickout)} mm`,
+      `get: ${proud.H} mm bin (${proud.nz}u), ${proud.saveMm} mm shorter`);
+  } else {
+    setText(depthBtns.proud, "not available", "already the shortest bin");
+  }
+  depthBtns.proud.disabled = !proud.ok;
+  for (const [m, btn] of Object.entries(depthBtns)) {
+    btn.setAttribute("aria-checked", String(m === choice.mode));
+  }
+}
+for (const [m, btn] of Object.entries(depthBtns)) {
+  btn.addEventListener("click", () => {
+    if (depthMode === m) return;
+    depthMode = m;
+    runProfile();
+  });
+}
 
 // ---- bin build + 3D preview + export ---------------------------------------
 const binSec = document.getElementById("bin");
@@ -443,7 +480,7 @@ const optMagnets = document.getElementById("opt-magnets");
 // press-fit allowance; 6x2 magnet -> 6.15 x 2.1). Ranges keep the
 // Gridfinity foot printable: pocket + 0.5 mm chamfer must leave ~1 mm
 // of foot wall (centers at +-13 on a 35.6 mm foot bottom), and the cut
-// must leave >= 2 mm of floor above it under the 5 mm minimum floor.
+// must leave >= 2 mm of floor above it (feet are 4.75 mm tall).
 // Per-device convenience like the prefix.
 const magOd = document.getElementById("mag-od");
 const magH = document.getElementById("mag-h");
@@ -736,6 +773,7 @@ async function reviseFromStep(file) {
     designRev = (design.rev || 1) + 1;
     const p = design.params || {};
     if (p.thickness) binThickness.value = p.thickness;
+    depthMode = p.depth_mode === "proud" ? "proud" : "flush";
     if (p.clearance != null) sliders.clearance.value = p.clearance;
     if (p.smooth_r != null) sliders.smooth.value = p.smooth_r;
     if (p.scallop_d != null) sliders.scallop.value = p.scallop_d;
@@ -775,6 +813,7 @@ function gatePhoto(file) {
   pendingPhoto = file;
   binName.value = file.name.replace(/\.[^.]+$/, "");
   binThickness.value = "";
+  depthMode = "flush";
   scanGate.style.display = "block";
   gateUpdate();
   scanStatus.textContent = "photo loaded — confirm the name, enter the " +
