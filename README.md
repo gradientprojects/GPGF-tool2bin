@@ -10,8 +10,9 @@ account, no tracking. After the first load it works offline (PWA).
 1. **Print the template** (letter or A4, linked on the page) at 100%
    scale — verify the printed 100 mm ruler. Plain paper works too,
    the template is just much more robust in uneven light.
-2. **Take a photo** of your tool on the sheet (on a phone the button
-   opens the camera directly).
+2. **Photograph your tool** on the sheet with any camera (a phone is
+   fine) and upload the photo on your computer — the app is built for
+   desktop browsers.
 3. The app perspective-corrects the sheet via the ArUco border,
    segments the tool with illumination-normalized scoring, finds its
    symmetry axis, and fits a smooth pocket profile — clearance,

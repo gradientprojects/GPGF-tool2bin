@@ -1,10 +1,10 @@
 // Self-sufficient end-to-end smoke (C6 exit gate): the committed,
 // EXIF-stripped fixture photos run through the real UI chain and land
 // on the committed expected values — no reference repo needed, runs in
-// CI on every push. Desktop runs the plain-paper photo with "fine
-// detail" checked (20 px/mm, the reference resolution the committed
-// expectations encode); the mobile project runs the template photo at
-// the 12 px/mm default — together they cover both resolutions.
+// CI on every push. The plain-paper photo runs with "fine detail"
+// checked (20 px/mm, the reference resolution the committed
+// expectations encode); the template photo runs at the 12 px/mm
+// default — together they cover both resolutions.
 //
 // Regenerate expectations (local): GEN_EXPECTED=1 npx playwright test fixtures
 import { test, expect } from "@playwright/test";
@@ -17,7 +17,7 @@ const GEN = !!process.env.GEN_EXPECTED;
 
 const PLAN = [
   { photo: "snips-closed.jpg", project: "desktop", mode: "desktop", fine: true },
-  { photo: "scraper-template.jpg", project: "mobile", mode: "mobile" },
+  { photo: "scraper-template.jpg", project: "desktop", mode: "template-12px" },
 ];
 
 async function runChain(page, photo, fine = false) {

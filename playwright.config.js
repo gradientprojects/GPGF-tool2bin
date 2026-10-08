@@ -9,13 +9,6 @@ export default defineConfig({
       name: "desktop",
       use: { ...devices["Desktop Chrome"] },
     },
-    {
-      // phone-shaped: the narrow viewport flips the app onto its
-      // adaptive 12 px/mm path; only the fixture smoke runs here
-      name: "mobile",
-      testMatch: /fixtures\.spec\.js/,
-      use: { ...devices["Pixel 7"], browserName: "chromium" },
-    },
   ],
   webServer: {
     // explicit IPv4 host: CI runners otherwise bind ::1 while the probe

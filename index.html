@@ -15,6 +15,9 @@
     <h1>GPGF-tool2bin</h1>
     <p class="tag">Photo of a tool &rarr; Gridfinity bin STEP. Everything runs in
       your browser &mdash; photos never leave your device.</p>
+    <p class="phone-note" id="phone-note" hidden>Made for desktop &mdash;
+      take the photo with your phone, then open this page on your computer
+      to build and download the bin.</p>
 
     <div class="step">
     <section id="template">
@@ -39,25 +42,23 @@
       <h2>2 · Scan a tool</h2>
       <div class="filerow">
         <label class="filebtn">
-          <input type="file" id="photo" accept="image/*" capture="environment">
-          &#128247; Take / choose a photo
-        </label>
-        <label class="filebtn alt">
-          <input type="file" id="stepfile" accept=".step,.stp">
-          &#128194; Load STEP to revise
+          <input type="file" id="photo" accept="image/*,.step,.stp">
+          &#128194; Upload image (new) or STEP file (to revise)
         </label>
       </div>
       <ul class="hint">
-        <li>Lay the tool on the sheet; on a phone the button opens the
-          camera. You can also drag a photo anywhere on this page.</li>
+        <li>Lay the tool on the sheet and photograph it with any camera
+          (a phone is fine), then upload the photo here — or drag it
+          anywhere on this page.</li>
+        <li>An exported STEP goes in the same way: it reopens its design
+          for revision, no photo needed.</li>
         <li>Shoot straight down over the tool.</li>
         <li>Thick tool? Step back and use 2×/3× <em>optical</em> zoom if
-          your phone has it — up close, the camera sees the tool&rsquo;s sides
+          your camera has it — up close, it sees the tool&rsquo;s sides
           and the outline comes out slightly oversized (sheet correction
           can&rsquo;t fix that).</li>
         <li>Even, diffuse light beats flash — flash puts glare on shiny
-          tools. Your camera&rsquo;s own flash toggle is there if it&rsquo;s too
-          dim.</li>
+          tools. Use the flash only if it&rsquo;s too dim.</li>
       </ul>
       <div class="optrow">
         <label>Plain-paper size
@@ -257,8 +258,8 @@
         <pre></pre>
       </details>
       <div><button id="export-step" disabled>&#11015; Download STEP</button></div>
-      <p class="hint">The STEP carries its own design: drop an exported
-        .step back onto this page to revise it (no photo needed) — the
+      <p class="hint">The STEP carries its own design: upload or drop an
+        exported .step back onto this page to revise it (no photo needed) — the
         next export uprevs itself (R01 &rarr; R02).</p>
     </section>
     <div class="pane" id="pane-bin" style="display:none">

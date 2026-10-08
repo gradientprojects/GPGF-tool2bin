@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, devices } from "@playwright/test";
 import path from "node:path";
 import { layout, markerCornersMm } from "../src/template.js";
 
@@ -63,4 +63,22 @@ test("warps the synthetic template end-to-end (CI-safe)", async ({ page }) => {
   // is a CI regression canary, not a precision gate (that's parity.spec.js).
   expect(median).toBeLessThan(0.25);
   expect(max).toBeLessThan(0.6);
+});
+
+// desktop-first: one upload input takes photos AND STEP files, never
+// forces the camera; phones get a notice banner, desktops don't.
+test("single upload input; phone notice only on phones", async ({ page, browser }) => {
+  await page.goto("/");
+  const input = page.locator("#photo");
+  await expect(input).toHaveAttribute("accept", /image\/\*/);
+  await expect(input).toHaveAttribute("accept", /\.step/);
+  expect(await input.getAttribute("capture")).toBeNull();
+  await expect(page.locator("input[type=file]")).toHaveCount(1);
+  await expect(page.locator("#phone-note")).toBeHidden();
+  const phone = await browser.newContext({ ...devices["Pixel 7"],
+    baseURL: test.info().project.use.baseURL });
+  const pp = await phone.newPage();
+  await pp.goto("/");
+  await expect(pp.locator("#phone-note")).toBeVisible();
+  await phone.close();
 });

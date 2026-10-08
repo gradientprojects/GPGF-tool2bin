@@ -14,7 +14,7 @@ main { max-width:680px; margin:0 auto; padding:28px 16px; }
          display:grid;
          grid-template-columns:minmax(380px, 520px) minmax(0, 1fr);
          column-gap:24px; align-items:start; }
-  h1, .tag { grid-column:1 / -1; }
+  h1, .tag, .phone-note { grid-column:1 / -1; }
   .step { display:contents; }
   .step > section, #checks { grid-column:1; }
   .step > .pane { grid-column:2; }
@@ -34,9 +34,12 @@ h2 { font-size:16px; margin:0 0 10px; color:var(--dim); }
 .filerow { display:flex; gap:10px; flex-wrap:wrap; }
 .filebtn { display:inline-block; background:var(--acc); color:#fff;
            font-weight:600; padding:12px 18px; border-radius:8px; cursor:pointer; }
-.filebtn.alt { background:var(--inset); color:var(--fg);
-               border:1px solid var(--line); font-weight:500; }
 .filebtn input { display:none; }
+
+/* shown on phones only (main.js): the app is desktop-first */
+.phone-note { background:var(--inset); border:1px solid var(--acc);
+              border-radius:8px; padding:10px 14px; margin:0 0 16px;
+              font-size:14px; line-height:1.4; }
 
 /* tool name gets the row: it's the one field people actually type in */
 .optrow > label.namerow { display:flex; }

@@ -838,15 +838,17 @@ document.getElementById("photo").addEventListener("change", (e) => {
   handleFile(e.target.files[0]);
   e.target.value = ""; // same file re-picked later must fire again
 });
-document.getElementById("stepfile").addEventListener("change", (e) => {
-  handleFile(e.target.files[0]);
-  e.target.value = "";
-});
 document.addEventListener("dragover", (e) => e.preventDefault());
 document.addEventListener("drop", (e) => {
   e.preventDefault();
   handleFile(e.dataTransfer.files[0]);
 });
+
+// desktop-first: phones are fine cameras but awkward for getting the
+// STEP out, so they get a notice (the app still works under it)
+if (matchMedia("(pointer: coarse) and (max-width: 900px)").matches) {
+  document.getElementById("phone-note").hidden = false;
+}
 
 // PWA: cache-on-fetch service worker -> works offline after first load
 if ("serviceWorker" in navigator && location.protocol === "https:") {
