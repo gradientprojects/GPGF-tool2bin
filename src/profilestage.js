@@ -242,9 +242,10 @@ function contourKey(cMm) {
 // whose inputs changed: thickness / depth / wall touch layout alone,
 // scallop moves skip the smooth fit (the expensive part). Every stage
 // is deterministic, so a hit returns exactly what a re-run would.
-const stageCache = { base: null, cut: null };
+const stageCache = { base: null, cut: [] }; // cut: small LRU, newest last
+const CUT_KEEP = 4; // scallop suggestions probe a few variants per fit
 export function clearProfileCache() {
-  stageCache.base = null; stageCache.cut = null;
+  stageCache.base = null; stageCache.cut = [];
 }
 
 /** Port of server.profile_response (profile side only). */
@@ -285,16 +286,19 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     const prof = timed("fit", () => computeProfile(c, cSrc, clearance, smoothR,
       blog, params.flat_faithful ? 0.3 : Infinity));
     base = stageCache.base = { key: baseKey, prof, logs };
-    stageCache.cut = null;
+    stageCache.cut = [];
   }
   const prof = base.prof;
   const scallops = params.scallops || autoScallops(prof.fit);
 
   const cutKey = JSON.stringify([baseKey, scallops, scallopD, scallopBlend,
     !!params.strict_contain]);
-  let cut = stageCache.cut && stageCache.cut.key === cutKey
-    ? stageCache.cut : null;
+  let cut = stageCache.cut.find((e) => e.key === cutKey) || null;
   const cutHit = !!cut;
+  if (cut) { // refresh its LRU slot
+    stageCache.cut.splice(stageCache.cut.indexOf(cut), 1);
+    stageCache.cut.push(cut);
+  }
   if (cut) {
     for (const l of cut.logs) log(l);
   } else {
@@ -316,7 +320,9 @@ export function profileResponse(c, cMm, params, log = () => {}) {
         segs = [fixed.tck]; periodic = true; pts = fixed.pts;
       }
     }
-    cut = stageCache.cut = { key: cutKey, segs, periodic, pts, cutWarnings, logs };
+    cut = { key: cutKey, segs, periodic, pts, cutWarnings, logs };
+    stageCache.cut.push(cut);
+    if (stageCache.cut.length > CUT_KEEP) stageCache.cut.shift();
   }
   let cutSegs = cut.segs, cutPeriodic = cut.periodic, pocketPts = cut.pts;
   const warnings = [...cut.cutWarnings];

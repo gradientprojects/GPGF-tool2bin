@@ -127,3 +127,8 @@ select, input[type=text], input[type=number] {
                              box-shadow:inset 0 0 0 1px var(--acc); }
 .choice:disabled { opacity:.55; cursor:default; }
 @media (max-width: 420px) { .choices { grid-template-columns:1fr; } }
+
+/* scallop suggestions: only shown when verified to save a grid unit */
+.suggest { margin:10px 0 0; }
+.suggest .choices { grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); }
+.choice[hidden] { display:none; }

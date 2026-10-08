@@ -1,6 +1,9 @@
 import { wrap } from "comlink";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GRID, GAP } from "./profilestage.js";
+import { R_TOP } from "./bin3d.js";
+import { suggestSize, suggestPosition, D_MIN } from "./scallopfit.js";
 
 // results Playwright asserts on
 window.__selftest = { cad: null, cv: null };
@@ -238,6 +241,7 @@ let lastProfileDraw = null; // redrawn on resize at the new display size
 let profView = null;        // mm<->canvas transform of the last draw
 let customScallops = null;  // user-dragged scallop centers (worker override)
 let dragIdx = -1, dragScallops = null; // in-progress drag
+let previewScallops = null, previewD = null; // hovered suggestion
 function drawProfile(toolMm, r) {
   lastProfileDraw = [toolMm, r];
   // backing resolution follows the CSS display box, sharp on hidpi
@@ -251,7 +255,12 @@ function drawProfile(toolMm, r) {
   const ctx = profileCnv.getContext("2d");
   const Wc = profileCnv.width, Hc = profileCnv.height;
   ctx.clearRect(0, 0, Wc, Hc);
-  const all = [...toolMm, ...r.pocketPts];
+  // the bin's footprint (same centre buildBin uses) frames the view
+  const L = r.layout;
+  const bw = L.nx * GRID - GAP, bd = L.ny * GRID - GAP;
+  const [bcx, bcy] = r.center;
+  const all = [...toolMm, ...r.pocketPts,
+    [bcx - bw / 2, bcy - bd / 2], [bcx + bw / 2, bcy + bd / 2]];
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [x, y] of all) {
     x0 = Math.min(x0, x); y0 = Math.min(y0, y);
@@ -270,10 +279,42 @@ function drawProfile(toolMm, r) {
     if (fill) { ctx.fillStyle = fill; ctx.fill(); }
     if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2 * dpr; ctx.stroke(); }
   };
+  // footprint: outline, 42 mm cell lines, dashed min-wall keep-out
+  const rect = (cx, cy, w, h, rad) => {
+    ctx.beginPath();
+    ctx.roundRect(tx(cx - w / 2), ty(cy + h / 2), w * s, h * s, rad * s);
+  };
+  rect(bcx, bcy, bw, bd, R_TOP);
+  ctx.fillStyle = "rgba(232,232,232,0.04)"; ctx.fill();
+  ctx.strokeStyle = "rgba(232,232,232,0.5)"; ctx.lineWidth = 1.5 * dpr;
+  ctx.stroke();
+  ctx.beginPath();
+  for (let i = 1; i < L.nx; i++) {
+    const x = bcx + (i - L.nx / 2) * GRID;
+    ctx.moveTo(tx(x), ty(bcy - bd / 2)); ctx.lineTo(tx(x), ty(bcy + bd / 2));
+  }
+  for (let j = 1; j < L.ny; j++) {
+    const y = bcy + (j - L.ny / 2) * GRID;
+    ctx.moveTo(tx(bcx - bw / 2), ty(y)); ctx.lineTo(tx(bcx + bw / 2), ty(y));
+  }
+  ctx.strokeStyle = "rgba(232,232,232,0.15)"; ctx.lineWidth = 1 * dpr;
+  ctx.stroke();
+  const wall = r.params ? r.params.min_wall : 0;
+  if (wall > 0) {
+    ctx.setLineDash([3 * dpr, 4 * dpr]);
+    rect(bcx, bcy, bw - 2 * wall, bd - 2 * wall, Math.max(0, R_TOP - wall));
+    ctx.strokeStyle = "rgba(232,232,232,0.25)"; ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.fillStyle = "rgba(232,232,232,0.6)";
+  ctx.font = `${12 * dpr}px -apple-system, Helvetica, sans-serif`;
+  ctx.fillText(`${L.nx}×${L.ny} · ${fmtMm(bw)} × ${fmtMm(bd)} mm`,
+    8 * dpr, 18 * dpr);
+
   poly(r.pocketPts, "#ff7a30", "rgba(255,122,48,0.12)");
   poly(toolMm, "#9aa7b5", "rgba(154,167,181,0.25)");
-  const scallopD = +sliders.scallop.value;
-  const dots = dragScallops || r.scallops;
+  const scallopD = previewD ?? +sliders.scallop.value;
+  const dots = dragScallops || previewScallops || r.scallops;
   if (scallopD > 0 && dots) dots.forEach(([sx, sy], i) => {
     ctx.setLineDash([4 * dpr, 4 * dpr]);
     ctx.beginPath();
@@ -407,6 +448,7 @@ let profileBusy = false, profileQueued = false;
 let autoBuild = false;
 async function runProfile() {
   if (!window.__contour || !window.__contour.ok) return;
+  clearSuggestions(); // they were for the old settings
   if (profileBusy) { profileQueued = true; return; }
   profileBusy = true;
   profileSec.style.display = "block";
@@ -428,7 +470,7 @@ async function runProfile() {
       if (profileQueued) continue;
       if (!r.ok) throw new Error(r.error);
       window.__profile = { ...r, params };
-      drawProfile(cres.contourMm, r);
+      drawProfile(cres.contourMm, window.__profile);
       const L = r.layout;
       profileStatus.textContent =
         `bin ${L.nx}×${L.ny}×${L.nz}u (${(L.nx * 42 - 0.5).toFixed(1)}×` +
@@ -444,12 +486,113 @@ async function runProfile() {
     profileBusy = false;
     updateStale();
   }
+  if (window.__profile && window.__profile.ok) refreshSuggestions();
   if (autoBuild && window.__profile && window.__profile.ok) {
     autoBuild = false;
     await runBuild();
   }
 }
 optMax.addEventListener("change", runProfile);
+
+// ---- scallop suggestions that save a grid unit ------------------------------
+// scallopfit.js predicts candidates from the bbox alone; each one is
+// then checked with a real fit (cheap: the base fit is cached) and only
+// shown if the real layout is smaller. Any tweak cancels the round.
+const suggestEl = document.getElementById("scallop-suggest");
+const sgBtns = { size: document.getElementById("sg-size"),
+                 move: document.getElementById("sg-move") };
+let suggestGen = 0, suggestions = { size: null, move: null };
+window.__suggest = null;
+function clearSuggestions() {
+  suggestGen++;
+  suggestions = { size: null, move: null };
+  window.__suggest = { done: false, size: null, move: null };
+  suggestEl.hidden = true;
+  for (const b of Object.values(sgBtns)) b.hidden = true;
+  if (previewScallops || previewD != null) {
+    previewScallops = null; previewD = null;
+    if (lastProfileDraw) drawProfile(...lastProfileDraw);
+  }
+}
+async function refreshSuggestions() {
+  clearSuggestions();
+  const gen = suggestGen;
+  const p = window.__profile, cres = window.__contour;
+  const { params } = p;
+  const cur = { nx: p.layout.nx, ny: p.layout.ny };
+  const verify = async (over) => {
+    const msg = { type: "profile", params: { ...params, ...over } };
+    if (cres.fromStep) msg.contourMm = cres.contourMm;
+    const r = await cvRequest(msg, [], 600000);
+    if (gen !== suggestGen || !r.ok) return null;
+    const L = r.layout;
+    const ok = L.nx <= cur.nx && L.ny <= cur.ny &&
+      L.nx * L.ny < cur.nx * cur.ny && L.nz === p.layout.nz;
+    return ok ? L : null;
+  };
+  try {
+    let size = null, move = null;
+    const s = suggestSize(p.fit, p.scallops, params.scallop_d, params.min_wall, cur);
+    // the bbox prediction can be a hair optimistic: allow 2 mm more
+    if (s) for (let d = s.d; d >= Math.max(D_MIN, s.d - 2); d--) {
+      const L = await verify({ scallop_d: d });
+      if (gen !== suggestGen) return;
+      if (L) { size = { d, L }; break; }
+    }
+    const m = suggestPosition(p.fit, p.scallops, params.scallop_d, params.min_wall, cur);
+    if (m) {
+      const L = await verify({ scallops: m.scallops });
+      if (gen !== suggestGen) return;
+      if (L) move = { scallops: m.scallops, move: m.move, L };
+    }
+    suggestions = { size, move };
+    showSuggestions(cur, params.scallop_d);
+    window.__suggest = { done: true, size, move };
+  } catch (e) {
+    if (gen === suggestGen) window.__suggest = { done: true, error: String(e) };
+  }
+}
+function showSuggestions(cur, d) {
+  const gain = (L) => {
+    const parts = [];
+    if (L.nx < cur.nx) parts.push(`${(cur.nx - L.nx) * GRID} mm narrower`);
+    if (L.ny < cur.ny) parts.push(`${(cur.ny - L.ny) * GRID} mm less deep`);
+    return `get: ${L.nx}×${L.ny} bin (was ${cur.nx}×${cur.ny}), ${parts.join(", ")}`;
+  };
+  const set = (btn, give, get) => {
+    btn.querySelector(".give").textContent = give;
+    btn.querySelector(".get").textContent = get;
+    btn.hidden = false;
+  };
+  const { size, move } = suggestions;
+  if (size) set(sgBtns.size, `give: scallops ${d} → ${size.d} mm`, gain(size.L));
+  if (move) set(sgBtns.move,
+    `give: scallops move ${Math.round(move.move)} mm (hover to preview)`, gain(move.L));
+  suggestEl.hidden = !size && !move;
+}
+const previewSuggestion = (kind, on) => {
+  const sg = suggestions[kind];
+  previewScallops = on && kind === "move" && sg ? sg.scallops : null;
+  previewD = on && kind === "size" && sg ? sg.d : null;
+  if (lastProfileDraw) drawProfile(...lastProfileDraw);
+};
+for (const [kind, btn] of Object.entries(sgBtns)) {
+  btn.addEventListener("mouseenter", () => previewSuggestion(kind, true));
+  btn.addEventListener("focus", () => previewSuggestion(kind, true));
+  btn.addEventListener("mouseleave", () => previewSuggestion(kind, false));
+  btn.addEventListener("blur", () => previewSuggestion(kind, false));
+  btn.addEventListener("click", () => {
+    const sg = suggestions[kind];
+    if (!sg) return;
+    if (kind === "size") {
+      sliders.scallop.value = sg.d;
+      syncSliderLabels();
+    } else {
+      customScallops = sg.scallops;
+    }
+    runProfile();
+  });
+}
 optStrict.addEventListener("change", runProfile);
 
 // pocket depth: flush (full-depth pocket) or one bin unit shorter with
