@@ -14,7 +14,7 @@
 //                    inflation overshoots there by design), so flat
 //                    tool edges stay flat on a lower smoothing rung.
 import {
-  symmetrizeContour, offsetContour, smoothProfile, addScallops,
+  symmetrizeContour, offsetContour, smoothProfile, addScallops, closedOutline,
   periodicFit, rasterize, sdf, fillMask, bbox, ccw, PX, LAM_BASE,
 } from "./smoothprof.js";
 import { evalPeriodic } from "./bspline.js";
@@ -242,10 +242,49 @@ function contourKey(cMm) {
 // whose inputs changed: thickness / depth / wall touch layout alone,
 // scallop moves skip the smooth fit (the expensive part). Every stage
 // is deterministic, so a hit returns exactly what a re-run would.
-const stageCache = { base: null, cut: [] }; // cut: small LRU, newest last
+const stageCache = { src: null, base: null, cut: [] }; // cut: LRU, newest last
 const CUT_KEEP = 4; // scallop suggestions probe a few variants per fit
 export function clearProfileCache() {
-  stageCache.base = null; stageCache.cut = [];
+  stageCache.src = null; stageCache.base = null; stageCache.cut = [];
+}
+
+/** hull / mirror the tool contour per params (cached: the quick preview
+ *  and the full fit both start here) */
+function sourceContour(c, cMm, params, log, timed) {
+  const key = JSON.stringify([contourKey(cMm), !!params.max_contour,
+    params.symmetric ?? true]);
+  if (stageCache.src && stageCache.src.key === key) {
+    for (const l of stageCache.src.logs) log(l);
+    return stageCache.src.cSrc;
+  }
+  const logs = [];
+  const slog = (l) => { logs.push(l); log(l); };
+  let cSrc = cMm;
+  if (params.max_contour) {
+    cSrc = convexHull(cSrc);
+    slog("max contour: convex hull of the tool outline");
+  }
+  if (params.symmetric ?? true) {
+    cSrc = timed("symmetrize", () => symmetrizeContour(c, cSrc));
+    slog("symmetric cutout: mirrored union across centerline");
+  }
+  stageCache.src = { key, cSrc, logs };
+  return cSrc;
+}
+
+/** Fast approximate pocket (no spline fit, no scallops): the closed,
+ *  clearance-grown outline the smooth fit approximates — shown while
+ *  the real fit runs after a clearance / smoothness change. */
+export function quickPocket(c, cMm, params) {
+  const clearance = +(params.clearance ?? 1.0);
+  const smoothR = +(params.smooth_r ?? 8.0);
+  const t0 = performance.now();
+  const cSrc = sourceContour(c, cMm, params, () => {}, (_, fn) => fn());
+  const pts = smoothR > 0 ? closedOutline(c, cSrc, clearance, smoothR).cMm
+    : clearance > 0 ? offsetContour(c, cSrc, clearance) : cSrc;
+  const stride = Math.max(1, Math.ceil(pts.length / 2000));
+  return { pocketPts: pts.filter((_, i) => i % stride === 0),
+           ms: Math.round(performance.now() - t0) };
 }
 
 /** Port of server.profile_response (profile side only). */
@@ -274,15 +313,7 @@ export function profileResponse(c, cMm, params, log = () => {}) {
   } else {
     const logs = [];
     const blog = (l) => { logs.push(l); log(l); };
-    let cSrc = cMm;
-    if (params.max_contour) {
-      cSrc = convexHull(cSrc);
-      blog("max contour: convex hull of the tool outline");
-    }
-    if (params.symmetric ?? true) {
-      cSrc = timed("symmetrize", () => symmetrizeContour(c, cSrc));
-      blog("symmetric cutout: mirrored union across centerline");
-    }
+    const cSrc = sourceContour(c, cMm, params, blog, timed);
     const prof = timed("fit", () => computeProfile(c, cSrc, clearance, smoothR,
       blog, params.flat_faithful ? 0.3 : Infinity));
     base = stageCache.base = { key: baseKey, prof, logs };

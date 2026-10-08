@@ -41,7 +41,7 @@ function detectAruco(c, imageData) {
 import { detectAndWarp } from "./warp.js";
 import { segment } from "./segment.js";
 import { findPose, rotateContour, toOrientedMm } from "./pose.js";
-import { profileResponse, clearProfileCache } from "./profilestage.js";
+import { profileResponse, clearProfileCache, quickPocket } from "./profilestage.js";
 
 let lastContourMm = null; // oriented mm contour from the contour stage
 let lastProfile = null;
@@ -153,6 +153,12 @@ const HANDLERS = {
   warp: (d, tick) => warp(d, tick),
   contour: (d, tick) => contour(d, tick),
   profile: (d) => profile(d),
+  // fast approximate pocket shown while a full refit runs
+  quick: async (d) => {
+    const src = d.contourMm || lastContourMm;
+    if (!src) throw new Error("no contour available; run contour first");
+    return { ok: true, ...quickPocket(await cvReady(), src, d.params || {}) };
+  },
 };
 
 self.onmessage = async (e) => {

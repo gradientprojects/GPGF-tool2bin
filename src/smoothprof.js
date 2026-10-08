@@ -12,6 +12,7 @@ import { findContours } from "./marching.js";
 export const PX = 20.0;
 export const CONTAIN_TOL = 0.05;
 export const OUT_CAP = 2.5;
+export const HOPELESS = 2 * OUT_CAP; // see the smooth-fit ladder
 export const RESAMPLE = 0.25;
 export const KNOT_MM = 3.0;
 export const LAM_BASE = 3e-7;
@@ -287,12 +288,32 @@ function straightMask(q, windowMm = 2.0, maxTurnDeg = 6) {
  *  the fit's deviation along STRAIGHT stretches of the outline. The
  *  reference's global OUT_CAP stays; corners, where the containment
  *  inflation legitimately overshoots, are exempt. */
-export function smoothProfile(c, contourMm, clearance, radius, log = () => {},
-                              flatCap = Infinity) {
+/** Raster stage of smoothProfile: tool grown by the clearance, closed
+ *  by the smoothing radius, traced back out (CCW mm). This is the shape
+ *  the spline then approximates — on its own it is a fast preview. */
+export function closedOutline(c, contourMm, clearance, radius) {
   const margin = clearance + radius + OUT_CAP + 5.0;
   const { mask, origin } = rasterize(c, contourMm, margin);
   const sdTool = sdf(c, mask);
   const H = mask.rows, W = mask.cols;
+  const grown = new c.Mat(H, W, c.CV_8UC1);
+  {
+    const gd = grown.data;
+    for (let i = 0; i < gd.length; i++) gd[i] = sdTool[i] <= clearance * PX ? 1 : 0;
+  }
+  mask.delete();
+  const closed = closing(c, grown, radius * PX);
+  grown.delete();
+  const sdClosed = sdf(c, closed);
+  closed.delete();
+  const cPx = longestContour(sdClosed, H, W, 0.0);
+  const cMm = ccw(cPx.map(([x, y]) => [x / PX + origin[0], y / PX + origin[1]]));
+  return { sdTool, origin, H, W, cMm };
+}
+
+export function smoothProfile(c, contourMm, clearance, radius, log = () => {},
+                              flatCap = Infinity) {
+  const { sdTool, origin, H, W, cMm } = closedOutline(c, contourMm, clearance, radius);
 
   // scipy map_coordinates keeps the input's float32 dtype, so every
   // sampled value is float32-rounded before later math — mirror that.
@@ -317,18 +338,6 @@ export function smoothProfile(c, contourMm, clearance, radius, log = () => {},
     });
   };
 
-  const grown = new c.Mat(H, W, c.CV_8UC1);
-  {
-    const gd = grown.data;
-    for (let i = 0; i < gd.length; i++) gd[i] = sdTool[i] <= clearance * PX ? 1 : 0;
-  }
-  mask.delete();
-  const closed = closing(c, grown, radius * PX);
-  grown.delete();
-  const sdClosed = sdf(c, closed);
-  closed.delete();
-  const cPx = longestContour(sdClosed, H, W, 0.0);
-  const cMm = ccw(cPx.map(([x, y]) => [x / PX + origin[0], y / PX + origin[1]]));
   const q = resampleClosed(cMm, RESAMPLE);
   const treeQ = new GridNN(q, 1.0);
   const straight = Number.isFinite(flatCap) ? straightMask(q) : null;
@@ -336,7 +345,8 @@ export function smoothProfile(c, contourMm, clearance, radius, log = () => {},
   let chosen = null;
   let tck = null, pts = null, mc = -Infinity, devOut = Infinity, multUsed = 0;
   let devFlat = 0;
-  for (const mult of [3000, 1000, 300, 100, 30, 10, 3, 1, 0.3, 0.1, 0.03]) {
+  const LADDER = [3000, 1000, 300, 100, 30, 10, 3, 1, 0.3, 0.1, 0.03];
+  for (const mult of LADDER) {
     let qw = q.map((p) => [p[0], p[1]]);
     multUsed = mult;
     for (let it = 0; it < 20; it++) {
@@ -351,6 +361,12 @@ export function smoothProfile(c, contourMm, clearance, radius, log = () => {},
         if (dist > devOut) devOut = dist;
         if (straight && straight[idx] && dist > devFlat) devFlat = dist;
       }
+      // app-side speed-up: a rung bulging past HOPELESS can't be accepted
+      // this round, and in practice never recovers (rungs that end under
+      // OUT_CAP peak at ~2.7 mm; hopeless ones sit at 5-18 mm from round
+      // 0), so skip its remaining inflation rounds. Rungs are independent
+      // and the last one is the non-converged fallback, so it always runs.
+      if (devOut > HOPELESS && mult !== LADDER[LADDER.length - 1]) break;
       if (mc >= clearance - CONTAIN_TOL) break;
       // inflate: push data outward where the curve intrudes
       const push = new Float64Array(qw.length);

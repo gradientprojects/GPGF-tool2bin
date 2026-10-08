@@ -11,6 +11,7 @@ window.__warp = null;
 window.__contour = null;
 window.__profile = null;
 window.__bin = null;
+window.__quick = null;
 
 // one CAD worker for the whole app (comlink)
 const cadApi = wrap(new Worker(new URL("./cad.worker.js", import.meta.url),
@@ -311,7 +312,15 @@ function drawProfile(toolMm, r) {
   ctx.fillText(`${L.nx}×${L.ny} · ${fmtMm(bw)} × ${fmtMm(bd)} mm`,
     8 * dpr, 18 * dpr);
 
-  poly(r.pocketPts, "#ff7a30", "rgba(255,122,48,0.12)");
+  if (r.provisional) { // fast approximation while the real fit runs
+    ctx.setLineDash([6 * dpr, 4 * dpr]);
+    poly(r.pocketPts, "#ff7a30", "rgba(255,122,48,0.06)");
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(255,122,48,0.9)";
+    ctx.fillText("refining pocket…", 8 * dpr, 36 * dpr);
+  } else {
+    poly(r.pocketPts, "#ff7a30", "rgba(255,122,48,0.12)");
+  }
   poly(toolMm, "#9aa7b5", "rgba(154,167,181,0.25)");
   const scallopD = previewD ?? +sliders.scallop.value;
   const dots = dragScallops || previewScallops || r.scallops;
@@ -443,6 +452,13 @@ function currentParams() {
 // burst of changes costs one extra fit (at the newest settings) instead
 // of queueing one per change in the worker.
 let profileBusy = false, profileQueued = false;
+// params that reshape the base outline (a full smooth refit)
+const QUICK_KEYS = ["clearance", "smooth_r", "symmetric", "max_contour",
+                    "flat_faithful"];
+// the quick preview runs ahead of the real fit in the same worker, so it
+// only pays off where the fit is slow; fast machines skip it
+let lastFitMs = 0;
+const QUICK_MIN_MS = 700;
 // the first profile of a new design (scan / STEP import) builds the
 // solid by itself; after that the 3D view waits for "Rebuild 3D"
 let autoBuild = false;
@@ -464,12 +480,27 @@ async function runProfile() {
       const params = currentParams();
       const msg = { type: "profile", params };
       if (cres.fromStep) msg.contourMm = cres.contourMm;
+      // outline-shaping change on a machine where the refit is slow:
+      // first draw the fast approximate pocket (dashed) in its place
+      const prev = window.__profile;
+      if (prev && prev.ok && lastFitMs > (window.__quickMinMs ?? QUICK_MIN_MS) &&
+          QUICK_KEYS.some((k) => prev.params[k] !== params[k])) {
+        const q = await cvRequest({ ...msg, type: "quick" }, [], 60000);
+        if (cres !== window.__contour) profileQueued = true;
+        if (profileQueued) continue;
+        window.__quick = q.ok ? { ms: q.ms, n: q.pocketPts.length } : q;
+        if (q.ok) {
+          drawProfile(cres.contourMm, { ...prev, pocketPts: q.pocketPts,
+                                        provisional: true });
+        }
+      }
       const r = await cvRequest(msg, [], 600000);
       // superseded while fitting (newer tweak, or a new design)
       if (cres !== window.__contour) profileQueued = true;
       if (profileQueued) continue;
       if (!r.ok) throw new Error(r.error);
       window.__profile = { ...r, params };
+      if (r.timings && r.timings.fit != null) lastFitMs = r.timings.fit;
       drawProfile(cres.contourMm, window.__profile);
       const L = r.layout;
       profileStatus.textContent =
@@ -969,6 +1000,7 @@ async function reviseFromStep(file) {
     if (!design.contour) throw new Error("design has no contour (old export?)");
     window.__warp = null;
     window.__contour = { ok: true, contourMm: design.contour, fromStep: true };
+    window.__profile = null;
     window.__bin = null;
     if (three) three.placed = false; // new design: reframe the 3D view
     autoBuild = true; binStale = false; updateStale();

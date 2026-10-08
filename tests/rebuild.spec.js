@@ -39,10 +39,16 @@ test("3D model waits for Rebuild; export rebuilds a stale model", async ({ page 
   await expect(stale).toBeVisible();
   expect(await sameBin(page)).toBe(true);
 
-  // geometry tweak: refit, still no rebuild
+  // geometry tweak: refit, still no rebuild. Force the quick preview
+  // (normally only on machines where the fit is slow): it must draw an
+  // approximate pocket before the real one lands.
+  await page.evaluate(() => { window.__quickMinMs = -1; window.__quick = null; });
   await page.locator("#sl-clearance").fill("1.5");
   await expect.poll(() => page.evaluate(() =>
     window.__profile.params.clearance), { timeout: 120000 }).toBe(1.5);
+  const quick = await page.evaluate(() => window.__quick);
+  expect(quick && quick.n).toBeGreaterThan(100);
+  await page.evaluate(() => { delete window.__quickMinMs; });
   await idle(page);
   expect(await sameBin(page)).toBe(true);
 
