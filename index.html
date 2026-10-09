@@ -148,6 +148,19 @@
     </section>
     <div class="pane" id="pane-warp" style="display:none">
       <h2>Detected outline</h2>
+      <div class="viewrow">
+        <button type="button" class="pv" id="ed-drag" aria-pressed="false">Edit
+          outline</button>
+        <button type="button" class="pv ed-undo" id="ed-undo-photo"
+          disabled>Undo</button>
+        <button type="button" class="pv" id="ed-del-photo" disabled
+          title="Delete the selected drag (Delete key)">Delete</button>
+        <button type="button" class="pv" id="ed-reset" disabled>Reset
+          outline</button>
+        <label class="pv edgetog"><input type="checkbox" id="ed-mirror">
+          mirror edits</label>
+      </div>
+      <div id="ed-hint-photo" class="sub edhint" hidden></div>
       <canvas id="warp-preview"></canvas>
     </div>
     </div>
@@ -201,6 +214,22 @@
         </div>
         <div class="sub">either way the pocket ends &ge;7 mm above the
           bin&rsquo;s bottom</div>
+      </div>
+      <div class="optrow" id="shape-row" hidden>
+        <div class="choicehead">bin shape</div>
+        <div class="choices" role="radiogroup" aria-label="bin shape">
+          <button type="button" class="choice" id="shape-full"
+            role="radio" aria-checked="true">
+            <b>Full</b><span class="give"></span><span class="get"></span>
+          </button>
+          <button type="button" class="choice" id="shape-puzzle"
+            role="radio" aria-checked="false">
+            <b>Puzzle-piece</b><span class="give"></span><span class="get"></span>
+          </button>
+        </div>
+        <div class="sub">puzzle-piece drops the grid cells the pocket
+          doesn&rsquo;t need (keeping the min wall), so other bins can use
+          that space</div>
       </div>
       <div id="sliders">
         <label class="slrow">clearance
@@ -270,6 +299,19 @@
     </section>
     <div class="pane" id="pane-profile" style="display:none">
       <h2>Pocket preview</h2>
+      <div class="viewrow">
+        <button type="button" class="pv" id="ed-pocket"
+          aria-pressed="false">Edit pocket</button>
+        <button type="button" class="pv" id="ed-straight"
+          aria-pressed="false">Straighten</button>
+        <button type="button" class="pv ed-undo" id="ed-undo" disabled>Undo</button>
+        <button type="button" class="pv" id="ed-del" disabled
+          title="Delete the selected edit (Delete key)">Delete</button>
+        <button type="button" class="pv" id="ed-clear" disabled>Clear pocket
+          edits</button>
+      </div>
+      <div id="ed-hint" class="sub edhint" hidden></div>
+      <div id="ed-note" class="sub edhint ednote" hidden></div>
       <canvas id="profile-view" width="560" height="420"></canvas>
     </div>
     </div>
@@ -326,21 +368,21 @@
         <summary>build log</summary>
         <pre></pre>
       </details>
-      <div><button id="export-step" disabled>&#11015; Download STEP</button></div>
-      <div class="optrow">
-      <label><input type="checkbox" id="opt-negative"> also export the
-        negative body</label>
+      <div class="dlrow">
+        <button id="export-step" disabled>&#11015; Download bin STEP</button>
+        <button id="export-neg" class="secondary" disabled>&#11015; Download
+          negative STEP</button>
       <span class="tip" id="tip-negative" tabindex="0" role="note"
         title="Fit test before the full print: print the NEG file in spiral vase mode (one wall, no top) and drop the tool in. The vase's outside matches the pocket wall, so its inside is about one line width smaller per side (~0.45 mm with a 0.4 mm nozzle) — if the tool fits the vase, it fits the bin. At clearances under ~0.5 mm it can feel tight in the vase yet still fit the real bin."
         aria-label="Fit test tip: print the NEG file in spiral vase mode and drop the tool in; if it fits the vase, it fits the bin (the vase is about one line width tighter per side).">&#9432;</span>
+      </div>
       <div class="sub"><ul>
-        <li>a second STEP (name ends in NEG): the pocket cutout as its own
+        <li>negative (name ends in NEG): the pocket cutout as its own
           solid — floor to rim, finger scoops included, no chamfer or
           magnets</li>
-        <li>same position as the bin, for your own cuts in CAD
-          (remembered on this device)</li>
+        <li>same position as the bin, for your own cuts in CAD; download
+          either one, or both</li>
       </ul></div>
-      </div>
       <p class="hint">The STEP carries its own design: open or drop an
         exported .step back onto this page to revise it (no photo needed) — the
         next export uprevs itself (R01 &rarr; R02).</p>

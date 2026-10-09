@@ -15,12 +15,18 @@
 //                    tool edges stay flat on a lower smoothing rung.
 import {
   symmetrizeContour, offsetContour, smoothProfile, addScoops, closedOutline,
-  periodicFit, rasterize, sdf, fillMask, bbox, ccw, PX, LAM_BASE,
+  periodicFit, rasterize, sdf, fillMask, bbox, ccw, PX, LAM_BASE, refitMask,
+  opening, closing,
 } from "./smoothprof.js";
+import {
+  chordReplace, mirrorSpans, mirrorDrags, dragContour, nearestIndex, DRAG_R,
+  shorterArc, tangentLine,
+} from "./outlineedit.js";
 import { evalPeriodic } from "./bspline.js";
 import { resample, detectCorners, fitProfile, sampleSegs } from "./profilefit.js";
 import { roundHalfEven, GridNN } from "./nummath.js";
 import { findContours } from "./marching.js";
+import { puzzleCells, puzzleOutline } from "./puzzle.js";
 
 export const GRID = 42.0;
 export const GAP = 0.5;
@@ -155,9 +161,10 @@ export function scoopsForMode(fitPts, spots, mode) {
   return pair;
 }
 
-/** strictContain post-pass: union the pocket with tool+clearance, refit. */
-function containmentUnion(c, pocketPts, toolMm, clearance, log) {
-  const margin = clearance + 8.0;
+/** Signed distance (mm) from the tool outline, on a raster covering the
+ *  tool and `pocketPts` with `margin` to spare: probe(x, y) is bilinear,
+ *  positive outside the tool. */
+function toolField(c, toolMm, pocketPts, margin) {
   // the canvas must cover the pocket as well as the tool: scoop lobes
   // reach well past the tool bbox, and a pocket clipped at the canvas
   // edge shatters the union contour into open border fragments that the
@@ -169,8 +176,6 @@ function containmentUnion(c, pocketPts, toolMm, clearance, log) {
   const mask = fillMask(c, H, W, [toolMm], origin);
   const sdTool = sdf(c, mask);
   mask.delete();
-  // worst intrusion of the pocket into the clearance zone
-  let worst = Infinity;
   const probe = (x, y) => {
     const r = (y - origin[1]) * PX, cc = (x - origin[0]) * PX;
     const r0 = Math.max(0, Math.min(H - 2, Math.floor(r)));
@@ -180,6 +185,214 @@ function containmentUnion(c, pocketPts, toolMm, clearance, log) {
     return (sdTool[i00] * (1 - fr) * (1 - fc) + sdTool[i00 + 1] * (1 - fr) * fc +
             sdTool[i00 + W] * fr * (1 - fc) + sdTool[i00 + W + 1] * fr * fc) / PX;
   };
+  return { sdTool, origin, H, W, probe };
+}
+
+/** Straighten post-pass: each span (two mm points on the pocket) turns
+ *  the shorter stretch of pocket between them into a straight line, for
+ *  where smoothing bows the pocket off a straight tool edge (it flares
+ *  out ~2 mm toward rounded corners). The line keeps the chord's
+ *  direction and slides, parallel, to sit exactly `clearance` from the
+ *  tool at its closest: in where the pocket bowed out, out where the
+ *  chord would cut across the tool (the user is told how far). Only a
+ *  line that would have to move out more than MAX_SHIFT isn't built.
+ *  `info[i]` reports span i: { built, shift } (shift > 0 = moved out). */
+const MAX_SHIFT = 15.0;
+const END_REACH = 25.0; // mm of pocket searched past each end of a line
+const STRAIGHT_BLEND = 4.0; // mm: fillet where a line meets the pocket
+
+/** First crossing of the line through a->b by the open path `pts`
+ *  (walked from pts[0], up to `reach` mm): { k, x } where x lies on
+ *  segment pts[k-1] -> pts[k]. The path starts at b's end of the line. */
+function meetLine(pts, a, b, reach) {
+  const ux = b[0] - a[0], uy = b[1] - a[1];
+  const side = (p) => ux * (p[1] - a[1]) - uy * (p[0] - a[0]);
+  let s = 0;
+  for (let k = 1; k < pts.length; k++) {
+    const p = pts[k - 1], q = pts[k];
+    s += Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (s > reach) return null;
+    const dp = side(p), dq = side(q);
+    if (dp === 0) return { k, x: p };
+    if (dp * dq < 0) {
+      const t = dp / (dp - dq);
+      return { k, x: [p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])] };
+    }
+  }
+  return null;
+}
+
+export function straightenPocket(c, pocketPts, spans, toolMm, clearance, log) {
+  // the margin covers lines slid out (<= MAX_SHIFT) past the pocket
+  const { sdTool, origin, H, W, probe } =
+    toolField(c, toolMm, pocketPts, clearance + MAX_SHIFT + 5.0);
+  let poly = pocketPts;
+  let done = 0;
+  const lines = []; // the lines as built, for the preview
+  const info = spans.map(() => ({ built: false, shift: 0, minOff: 0 }));
+  spans.forEach(([a, b, dir, off], si) => {
+    const next = chordReplace(poly, a, b);
+    if (next === poly || next.length < 3) return;
+    // the stretch being straightened, p0 -> p1 (next runs p1 .. p0 the
+    // long way round, and the line closes p0 -> p1)
+    const N = poly.length;
+    const { from, to } = shorterArc(poly, nearestIndex(poly, a), nearestIndex(poly, b));
+    const arc = [];
+    for (let k = from; ; k = (k + 1) % N) { arc.push(poly[k]); if (k === to) break; }
+    const p0 = arc[0], p1 = arc[arc.length - 1];
+    // the line's direction: the chord, or (shift-click) the set angle
+    let ux = p1[0] - p0[0], uy = p1[1] - p0[1];
+    if (dir != null) {
+      const vx = Math.cos(dir * Math.PI / 180), vy = Math.sin(dir * Math.PI / 180);
+      const s = Math.sign(ux * vx + uy * vy) || 1;
+      ux = s * vx; uy = s * vy;
+    } else {
+      const L = Math.hypot(ux, uy) || 1;
+      ux /= L; uy /= L;
+    }
+    const len = (p1[0] - p0[0]) * ux + (p1[1] - p0[1]) * uy;
+    if (len < 2.0) return;
+    let nx = -uy, ny = ux;
+    // outward = away from the bulk of the rest of the pocket (a chord
+    // across the tool can't ask the tool's distance field which way)
+    let bulk = 0;
+    for (let i = 1; i < next.length - 1; i++) {
+      bulk += (next[i][0] - p0[0]) * nx + (next[i][1] - p0[1]) * ny;
+    }
+    if (bulk > 0) { nx = -nx; ny = -ny; }
+    // where it sits (offsets from p0 along the outward normal):
+    // tangent = resting on the stretch's outermost points (owner: bridge
+    // the little bow-in, don't cut into the lobes); never closer to the
+    // tool than the clearance (+ a hair, so the refit's wiggle stays out)
+    const tg = tangentLine(arc, [ux, uy], [nx, ny]);
+    let worst = Infinity;
+    const m = Math.ceil(len / 0.25);
+    for (let i = 0; i <= m; i++) {
+      const t = (i / m) * len;
+      worst = Math.min(worst, probe(p0[0] + t * ux, p0[1] + t * uy));
+    }
+    const clr = clearance - worst + 0.02;
+    info[si].shift = clr - tg.sup;   // > 0: the tool pushed it past the tangent
+    info[si].minOff = clr - tg.sup;  // how far in a drag may take it
+    if (clr - tg.sup > MAX_SHIFT) return;
+    // a dragged line: `off` mm out from the tangent (in: down to snug)
+    const at = Math.max(clr, tg.sup + (+off || 0));
+    const d = arc.map((p) => (p[0] - p0[0]) * nx + (p[1] - p0[1]) * ny);
+    const onLine = (p) => {
+      const dp = (p[0] - p0[0]) * nx + (p[1] - p0[1]) * ny;
+      return [p[0] + (at - dp) * nx, p[1] + (at - dp) * ny];
+    };
+    let ia = d.findIndex((v) => v >= at - 0.03);
+    let ib = d.length - 1;
+    while (ib > ia && d[ib] < at - 0.03) ib--;
+    const reach = ia >= 0 ? Math.hypot(arc[ib][0] - arc[ia][0], arc[ib][1] - arc[ia][1]) : 0;
+    if (ia >= 0 && reach >= 2.0) {
+      // the line touches (or cuts) the stretch: replace just the part
+      // between its first and last contact; the curve on either side
+      // stays and meets it at its own tangent — no jog, no foot
+      const cross = (j, k) => { // where segment arc[j] -> arc[k] meets the line
+        const t = Math.max(0, Math.min(1, (at - d[j]) / ((d[k] - d[j]) || 1)));
+        return onLine([arc[j][0] + t * (arc[k][0] - arc[j][0]),
+                       arc[j][1] + t * (arc[k][1] - arc[j][1])]);
+      };
+      const ea = ia > 0 ? cross(ia - 1, ia) : onLine(arc[0]);
+      const eb = ib < arc.length - 1 ? cross(ib + 1, ib) : onLine(arc[arc.length - 1]);
+      poly = [...next, ...arc.slice(1, ia), ea, eb, ...arc.slice(ib + 1, -1)];
+      lines.push([ea, eb, si]);
+    } else {
+      // out past the whole stretch (the clearance, or a drag): the chord
+      // slid out, each end running on to where it meets the pocket
+      const q0 = [p0[0] + nx * at, p0[1] + ny * at];
+      const q1 = [p0[0] + ux * len + nx * at, p0[1] + uy * len + ny * at];
+      const n = next.length;
+      const head = meetLine(next.slice(0, -1), q0, q1, END_REACH);
+      const tail = meetLine(next.slice(1).reverse(), q1, q0, END_REACH);
+      let i1 = 1, i0 = n - 1; // body = next[i1 .. i0)
+      let e1 = q1, e0 = q0;
+      if (head) { e1 = head.x; i1 = head.k; }
+      if (tail) { e0 = tail.x; i0 = n - tail.k; }
+      if (i0 - i1 < 2) { // the two ends met each other: keep them short
+        e1 = q1; e0 = q0; i1 = 1; i0 = n - 1;
+      }
+      poly = [e1, ...next.slice(i1, i0), e0];
+      lines.push([e0, e1, si]);
+    }
+    info[si].built = true;
+    done++;
+  });
+  const skipped = info.filter((s) => !s.built && s.shift > MAX_SHIFT).length;
+  const warnings = skipped
+    ? [`${skipped} straight line(s) would cut through the tool -- not added`]
+    : [];
+  if (!done) return { warnings, lines, info };
+  // fillet where each line meets the rest of the pocket (owner: it met
+  // it at an angle, ~1 mm round): open + close with STRAIGHT_BLEND, only
+  // in a zone around the line's ends, so the line itself stays straight
+  const base = fillMask(c, H, W, [poly], origin);
+  {
+    const rPx = STRAIGHT_BLEND * PX;
+    const op = opening(c, base, rPx);
+    const sm = closing(c, op, rPx);
+    op.delete();
+    const zone = c.Mat.zeros(H, W, c.CV_8UC1);
+    const zr = Math.trunc(roundHalfEven(3 * rPx));
+    for (const [e0, e1] of lines) for (const e of [e0, e1]) {
+      c.circle(zone, new c.Point(Math.trunc(roundHalfEven((e[0] - origin[0]) * PX)),
+        Math.trunc(roundHalfEven((e[1] - origin[1]) * PX))), zr, new c.Scalar(1), -1);
+    }
+    const bd = base.data, sd = sm.data, zd = zone.data;
+    for (let i = 0; i < bd.length; i++) if (zd[i]) bd[i] = sd[i];
+    sm.delete(); zone.delete();
+  }
+  // OR the tool+clearance zone back in: where a line's end turns into
+  // the rest of the pocket near a tool corner, the corner it makes would
+  // otherwise shave the clearance there. The refit rounds that corner a
+  // little further in, so grow the zone by whatever it shaved and redo.
+  let extra = 0.02, fit = null, minSd = -Infinity;
+  for (let round = 0; round < 4; round++) {
+    const mask = base.clone();
+    const md = mask.data, lim = (clearance + extra) * PX;
+    for (let i = 0; i < md.length; i++) if (sdTool[i] <= lim) md[i] = 1;
+    fit = refitMask(c, mask, origin);
+    mask.delete();
+    minSd = Infinity;
+    for (const [x, y] of fit.pts) minSd = Math.min(minSd, probe(x, y));
+    if (minSd >= clearance - 0.03) break;
+    extra += clearance - minSd + 0.02;
+  }
+  base.delete();
+  log(`straightened ${done} stretch(es) of pocket, refit dev ` +
+      `${fit.dev.toFixed(3)} mm, min clearance ${minSd.toFixed(2)} mm`);
+  return { tck: fit.tck, pts: fit.pts, warnings, lines, info };
+}
+
+/** Hand drags of the pocket itself ([[at, d], ...] in mm: the pocket
+ *  point nearest `at` moves by d, DRAG_R of outline each side follows),
+ *  then a tight refit. Strict containment (after this) still holds the
+ *  clearance if a drag pulls the pocket into it. */
+export function dragPocket(c, pocketPts, drags, log) {
+  let poly = pocketPts;
+  for (const [at, d] of drags) {
+    poly = dragContour(poly, nearestIndex(poly, at), d, DRAG_R, false);
+  }
+  const margin = 3.0;
+  const bb = bbox(poly);
+  const origin = [bb.x0 - margin, bb.y0 - margin];
+  const H = Math.trunc((bb.y1 - bb.y0 + 2 * margin) * PX) + 2;
+  const W = Math.trunc((bb.x1 - bb.x0 + 2 * margin) * PX) + 2;
+  const mask = fillMask(c, H, W, [poly], origin);
+  const fit = refitMask(c, mask, origin);
+  mask.delete();
+  log(`pocket hand-edited (${drags.length} drag(s)), refit dev ${fit.dev.toFixed(3)} mm`);
+  return { tck: fit.tck, pts: fit.pts };
+}
+
+/** strictContain post-pass: union the pocket with tool+clearance, refit. */
+function containmentUnion(c, pocketPts, toolMm, clearance, log) {
+  const { sdTool, origin, H, W, probe } =
+    toolField(c, toolMm, pocketPts, clearance + 8.0);
+  // worst intrusion of the pocket into the clearance zone
+  let worst = Infinity;
   for (const [x, y] of pocketPts) {
     const v = probe(x, y);
     if (v < worst) worst = v;
@@ -388,8 +601,19 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     ? scoopsForMode(prof.fit, params.scoops, scoopMode) || []
     : autoScoops(prof.fit, scoopMode);
 
+  // hand edits of the pocket (straight lines, drags); a symmetric pocket
+  // mirrors them. straightSrc[k] = which of params.straights line k is.
+  const sym = params.symmetric ?? true;
+  const straights = [], straightSrc = [];
+  (Array.isArray(params.straights) ? params.straights : []).forEach((s, i) => {
+    for (const m of sym ? mirrorSpans([s]) : [s]) {
+      straights.push(m); straightSrc.push(i);
+    }
+  });
+  const drags = Array.isArray(params.pocket_drags) && params.pocket_drags.length
+    ? (sym ? mirrorDrags(params.pocket_drags) : params.pocket_drags) : [];
   const cutKey = JSON.stringify([baseKey, scoops, scoopD, scoopBlend,
-    !!params.strict_contain]);
+    !!params.strict_contain, straights, drags]);
   let cut = stageCache.cut.find((e) => e.key === cutKey) || null;
   const cutHit = !!cut;
   if (cut) { // refresh its LRU slot
@@ -402,12 +626,38 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     const logs = [];
     const clog = (l) => { logs.push(l); log(l); };
     let segs = prof.segs, periodic = prof.periodic, pts = prof.fit;
-    if (scoopD > 0 && scoops.length) {
-      const s = timed("scoops", () =>
-        addScoops(c, prof.fit, scoops, scoopD, scoopBlend, clog));
+    const cutWarnings = [];
+    let straightLines = [], straightInfo = [];
+    if (straights.length) {
+      const s = timed("straighten", () =>
+        straightenPocket(c, pts, straights, cMm, clearance, clog));
+      cutWarnings.push(...s.warnings);
+      // tag each built line with the user's line it came from
+      straightLines = s.lines.map(([e0, e1, k]) => [e0, e1, straightSrc[k]]);
+      // per line the user drew: built (any copy), moved out how far
+      straightInfo = params.straights.map(() =>
+        ({ built: false, shift: -Infinity, minOff: -Infinity }));
+      s.info.forEach((v, k) => {
+        const u = straightInfo[straightSrc[k]];
+        u.built = u.built || v.built;
+        u.shift = Math.max(u.shift, v.shift);
+        u.minOff = Math.max(u.minOff, v.minOff ?? -Infinity);
+      });
+      for (const u of straightInfo) { // no copy reached the build: plain 0
+        if (!Number.isFinite(u.shift)) u.shift = 0;
+        if (!Number.isFinite(u.minOff)) u.minOff = 0;
+      }
+      if (s.tck) { segs = [s.tck]; periodic = true; pts = s.pts; }
+    }
+    if (drags.length) {
+      const s = timed("drag", () => dragPocket(c, pts, drags, clog));
       segs = [s.tck]; periodic = true; pts = s.pts;
     }
-    const cutWarnings = [];
+    if (scoopD > 0 && scoops.length) {
+      const s = timed("scoops", () =>
+        addScoops(c, pts, scoops, scoopD, scoopBlend, clog));
+      segs = [s.tck]; periodic = true; pts = s.pts;
+    }
     if (params.strict_contain) {
       const fixed = timed("contain", () =>
         containmentUnion(c, pts, cMm, clearance, clog));
@@ -417,7 +667,8 @@ export function profileResponse(c, cMm, params, log = () => {}) {
         segs = [fixed.tck]; periodic = true; pts = fixed.pts;
       }
     }
-    cut = { key: cutKey, segs, periodic, pts, cutWarnings, logs };
+    cut = { key: cutKey, segs, periodic, pts, cutWarnings, straightLines,
+            straightInfo, logs };
     stageCache.cut.push(cut);
     if (stageCache.cut.length > CUT_KEEP) stageCache.cut.shift();
   }
@@ -428,10 +679,17 @@ export function profileResponse(c, cMm, params, log = () => {}) {
   if ((prof.extra.minClearance ?? clearance) < clearance - 0.05 && !params.strict_contain) {
     warnings.push("containment not met -- lower smoothness or clearance");
   }
+  // puzzle-piece bin: which cells the pocket doesn't need (offered only
+  // when that's at least one; `on` = asked for AND it saves cells)
+  const pz = puzzleCells(pocketPts, L.nx, L.ny, L.bboxC, minWall);
+  const puzzle = { keep: pz.keep, drop: pz.drop, total: L.nx * L.ny,
+    on: !!params.puzzle && pz.drop > 0,
+    outline: pz.drop > 0 ? puzzleOutline(pz.kept, L.nx, L.ny, L.bboxC) : null };
   return {
     segs: cutSegs, periodic: cutPeriodic, fit: prof.fit, pocketPts,
     layout: { nx: L.nx, ny: L.ny, nz: L.nz, H: L.H, depth: L.depth },
-    center: L.bboxC, scoops, warnings,
+    center: L.bboxC, scoops, warnings, straightLines: cut.straightLines,
+    straightInfo: cut.straightInfo, puzzle,
     depthChoice: { mode: L.mode, options: L.options },
     timings, cached: { base: baseHit, cut: cutHit },
   };

@@ -11,6 +11,7 @@
 //    only a foreign-importer drag test catches this class of bug.
 // `oc` is the ready opencascade instance throughout.
 import { periodicFit } from "./smoothprof.js";
+import { puzzleOutline } from "./puzzle.js";
 
 export const GRID = 42.0;
 export const GAP = 0.5;
@@ -449,6 +450,43 @@ export function pocketBody(oc, segs, periodic, floor, H) {
     H - floor);
 }
 
+/** Puzzle-piece body outline at height z: the kept cells' loop
+ *  (puzzleOutline vertices, CCW, inset GAP/2) with every corner rounded:
+ *  outside corners R_TOP like a full bin, inside corners R_TOP − GAP so a
+ *  neighbour bin's R_TOP corner still nests with ≥ GAP to spare. Lines +
+ *  three-point arcs, the same primitives as rrectWire. */
+export function puzzleWire(oc, verts, z) {
+  const n = verts.length;
+  const unit = (a, b) => {
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    return [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+  };
+  const arcs = verts.map(({ p, convex }, k) => {
+    const din = unit(verts[(k - 1 + n) % n].p, p);
+    const dout = unit(p, verts[(k + 1) % n].p);
+    const r = convex ? R_TOP : R_TOP - GAP;
+    const a = [p[0] - r * din[0], p[1] - r * din[1]];
+    const b = [p[0] + r * dout[0], p[1] + r * dout[1]];
+    // centre: inward (left of travel) for an outside corner, outward for
+    // an inside one; the arc's midpoint lies toward the corner point
+    const s = convex ? 1 : -1;
+    const c = [a[0] - s * r * din[1], a[1] + s * r * din[0]];
+    const v = unit(c, p);
+    return { a, m: [c[0] + r * v[0], c[1] + r * v[1]], b };
+  });
+  const mw = new oc.BRepBuilderAPI_MakeWire_1();
+  for (let k = 0; k < n; k++) {
+    const { a, m, b } = arcs[k];
+    mw.Add_1(arcEdge(oc, [a[0], a[1], z], [m[0], m[1], z], [b[0], b[1], z]));
+    const na = arcs[(k + 1) % n].a;
+    mw.Add_1(segmentEdge(oc, [b[0], b[1], z], [na[0], na[1], z]));
+  }
+  if (!mw.IsDone()) throw new Error("puzzle-piece outline wire failed");
+  const w = mw.Wire();
+  mw.delete();
+  return w;
+}
+
 export function cellCenters(nx, ny) {
   const out = [];
   for (let i = 0; i < nx; i++) {
@@ -462,7 +500,7 @@ export function cellCenters(nx, ny) {
 /** Port of bin3d.build_bin. Returns { shape, depth, H }. */
 export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   magnets = null, edgeStyle = null, edgeSize = 1.0,
-  center = [0, 0], pocketPts = null, log = () => {},
+  center = [0, 0], pocketPts = null, keepCells = null, log = () => {},
 } = {}) {
   const H = nz * 7.0;
   let depth = thickness;
@@ -475,9 +513,22 @@ export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   const [bx, by] = center;
   log(`bin ${nx}x${ny}x${nz} (${W} x ${D} x ${H} mm), pocket depth ${depth}`);
 
-  let shape = prism(oc, faceFromWire(oc, rrectWire(oc, bx, by, W, D, R_TOP, FOOT_H)),
-    H - FOOT_H);
-  const cells = cellCenters(nx, ny).map(([cx, cy]) => [cx + bx, cy + by]);
+  // puzzle-piece bin: only the kept cells (keepCells = [[i, j], ...])
+  const kept = keepCells && keepCells.length < nx * ny ? keepCells : null;
+  let outer;
+  if (kept) {
+    const grid = Array.from({ length: nx }, () => new Array(ny).fill(false));
+    for (const [i, j] of kept) grid[i][j] = true;
+    outer = puzzleWire(oc, puzzleOutline(grid, nx, ny, center), FOOT_H);
+    log(`puzzle-piece bin: ${kept.length} of ${nx * ny} cells`);
+  } else {
+    outer = rrectWire(oc, bx, by, W, D, R_TOP, FOOT_H);
+  }
+  let shape = prism(oc, faceFromWire(oc, outer), H - FOOT_H);
+  // cellCenters runs i-major, j-minor: index i * ny + j
+  const cells = cellCenters(nx, ny).map(([cx, cy]) => [cx + bx, cy + by])
+    .filter((_, k) => !kept ||
+      kept.some(([i, j]) => i * ny + j === k));
   for (const [cx, cy] of cells) shape = fuse(oc, shape, foot(oc, cx, cy));
 
   if ((edgeStyle === "fillet" || edgeStyle === "chamfer") && edgeSize > 0) {

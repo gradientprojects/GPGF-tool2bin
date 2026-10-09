@@ -77,6 +77,19 @@ export function sdf(c, mask) {
 }
 
 /** Morphological closing via distance thresholds (reference _closing). */
+/** morphological opening (rounds convex corners, drops necks < 2r):
+ *  the complement of the closing of the complement */
+export function opening(c, mask, rPx) {
+  const inv = new c.Mat();
+  const one = new c.Mat(mask.rows, mask.cols, c.CV_8UC1, new c.Scalar(1));
+  c.subtract(one, mask, inv);
+  const cl = closing(c, inv, rPx);
+  inv.delete();
+  const out = new c.Mat();
+  c.subtract(one, cl, out);
+  one.delete(); cl.delete();
+  return out;
+}
 export function closing(c, mask, rPx) {
   const inv = new c.Mat();
   const one = new c.Mat(mask.rows, mask.cols, c.CV_8UC1, new c.Scalar(1));
@@ -245,8 +258,18 @@ export function addScoops(c, basePts, scoops, d, blend = 4.0, log = () => {}) {
     for (let i = 0; i < fd.length; i++) fd[i] = zd[i] > 0 ? cd[i] : md[i];
   }
   mask.delete(); zone.delete(); closed.delete();
-  const sd = sdf(c, final);
+  const { tck, pts, dev } = refitMask(c, final, origin);
   final.delete();
+  log(`scoops blended (r ${blend} mm junctions), refit dev ${dev.toFixed(3)} mm`);
+  return { tck, pts };
+}
+
+/** Raster pocket (8U mask at PX, `origin` = its mm corner) back to a
+ *  periodic spline: outer contour, CCW, tight refit (<= 0.15 mm). The
+ *  shared tail of the post-passes that reshape a fitted pocket. */
+export function refitMask(c, mask, origin) {
+  const H = mask.rows, W = mask.cols;
+  const sd = sdf(c, mask);
   const cPx = longestContour(sd, H, W, 0.0);
   const cMm = ccw(cPx.map(([x, y]) => [x / PX + origin[0], y / PX + origin[1]]));
   const q = resampleClosed(cMm, 0.2);
@@ -262,8 +285,7 @@ export function addScoops(c, basePts, scoops, d, blend = 4.0, log = () => {}) {
     }
     if (dev <= 0.15) break;
   }
-  log(`scoops blended (r ${blend} mm junctions), refit dev ${dev.toFixed(3)} mm`);
-  return { tck, pts };
+  return { tck, pts, dev };
 }
 
 /** 1 where the closed outline is locally straight: total turn over a

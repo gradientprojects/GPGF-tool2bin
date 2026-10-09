@@ -52,6 +52,7 @@ async function build(profile, params) {
     profile.layout.depth, {
       magnets, edgeStyle: edge.style || null, edgeSize: +(edge.size || 0),
       center: profile.center, pocketPts: profile.pocketPts,
+      keepCells: profile.keepCells || null,
       log: (l) => logs.push(l),
     });
   if (!params.deboss || params.deboss.enabled) {
@@ -59,8 +60,15 @@ async function build(profile, params) {
     const text = "R" + String(rev).padStart(2, "0");
     try {
       await ensureDebossFont(fetch(debossFontUrl).then((r) => r.arrayBuffer()));
+      // puzzle-piece bin: the first kept cell reading from below
+      // (min-x / max-y first, like the full bin's bottom-left)
+      let cell = null;
+      const keep = profile.keepCells;
+      if (keep && keep.length) {
+        cell = [...keep].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+      }
       const cutter = debossCutter(text, profile.layout.nx, profile.layout.ny,
-        profile.center);
+        profile.center, cell);
       shape = tryCut(oc, shape, cutter.wrapped,
         `rev deboss '${text}' (0.4 mm, underside)`, (l) => logs.push(l));
     } catch (err) {
@@ -80,7 +88,10 @@ async function build(profile, params) {
   };
 }
 
-async function exportStep(name, rev = 1, label = null, negative = false) {
+/** STEP text of the bin (`bin`) and/or its negative body (`negative`):
+ *  each download button asks for just its own file. */
+async function exportStep(name, rev = 1, label = null, negative = false,
+                          bin = true) {
   const oc = await init();
   if (!lastBuild) throw new Error("no bin built yet");
   const design = {
@@ -89,8 +100,8 @@ async function exportStep(name, rev = 1, label = null, negative = false) {
     layout: lastBuild.profile.layout,
     contour: lastBuild.profile.contour || null,
   };
-  const text = writeStepText(oc, lastBuild.shape,
-    { name: label || `${name} bin`, design });
+  const text = bin ? writeStepText(oc, lastBuild.shape,
+    { name: label || `${name} bin`, design }) : null;
   let negText = null;
   if (negative) {
     const { segs, periodic } = lastBuild.profile;
@@ -100,7 +111,7 @@ async function exportStep(name, rev = 1, label = null, negative = false) {
       { name: `${label || name} negative` });
     body.delete();
   }
-  return { ok: true, text, bytes: text.length, negText };
+  return { ok: true, text, bytes: (text || negText).length, negText };
 }
 
 expose({ helloStep, build, exportStep });

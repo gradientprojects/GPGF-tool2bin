@@ -88,3 +88,25 @@ test("3D model waits for Rebuild; export rebuilds a stale model", async ({ page 
   expect(await exportName()).toMatch(/ R02\.step$/);
   expect(await exportName()).toMatch(/ R02\.step$/);
 });
+
+// owner bug 2026-10-09: an edit made while the FIRST (automatic) build
+// was running was ignored ("nothing built yet") — the model came out of
+// the older settings with no Rebuild offer
+test("a change during the first build leaves the model stale", async ({ page }) => {
+  test.setTimeout(300000);
+  await page.goto("/");
+  await page.setInputFiles("#photo", PHOTO);
+  await page.fill("#bin-thickness", "25");
+  await page.click("#start-scan");
+  // the first build is under way: profile done, no bin yet
+  await expect.poll(() => page.evaluate(() => !!(window.__profile &&
+    window.__profile.ok && !window.__bin &&
+    /building/.test(document.getElementById("bin-status").textContent))),
+    { timeout: 240000, intervals: [100] }).toBe(true);
+  await page.locator("#sl-clearance").fill("1.7");
+  await expect.poll(() => page.evaluate(() => window.__bin && window.__bin.ok),
+    { timeout: 240000 }).toBe(true);
+  await idle(page);
+  expect(await page.evaluate(() => window.__profile.params.clearance)).toBe(1.7);
+  await expect(page.locator("#bin-stale")).toBeVisible();
+});

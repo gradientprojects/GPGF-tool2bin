@@ -50,6 +50,13 @@ h2 { font-size:16px; margin:0 0 10px; color:var(--dim); }
 .pv { background:var(--inset); color:var(--fg); border:1px solid var(--line);
       border-radius:6px; padding:4px 12px; font-size:13px; cursor:pointer; }
 .pv:hover { border-color:var(--acc); }
+.pv[aria-pressed=true] { border-color:var(--acc); background:var(--acc);
+                         color:#fff; }
+.pv:disabled { opacity:.55; cursor:default; border-color:var(--line); }
+.edhint { margin:-4px 0 8px; }
+.edhint[hidden] { display:none; }
+.ednote { color:#ffd166; } /* what an edit did (or why it couldn't) */
+#warp-preview { touch-action:none; } /* the outline is draggable */
 .edgetog { display:inline-flex; align-items:center; gap:6px;
            margin-left:auto; }
 
@@ -64,6 +71,8 @@ ul.hint li { margin:6px 0; line-height:1.4; }
 /* options: one per line, control + explanation underneath */
 .optrow { margin:12px 0; }
 .tip { color:var(--dim); cursor:help; margin-left:6px; font-size:14px; }
+/* bin / negative downloads: either one, or both */
+.dlrow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 .tip:hover, .tip:focus { color:var(--fg); }
 .optrow > label { display:inline-flex; align-items:center; gap:8px;
                   font-size:14.5px; color:var(--fg); }
