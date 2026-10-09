@@ -738,6 +738,8 @@ function updateEditButtons() {
   for (const b of edBtns.undo) b.disabled = !editUndo.length;
   edBtns.reset.disabled = !toolDrags.length;
   edBtns.clear.disabled = !(customStraights.length || customPocketDrags.length);
+  // the straight edge blend slider only matters once there's a line
+  document.getElementById("blend-row").hidden = !customStraights.length;
   edBtns.drag.disabled = !warpFrame();
   edBtns.delPhoto.disabled = photoSel < 0;
   edBtns.del.disabled = !pocketSel;
@@ -1038,7 +1040,7 @@ profileCnv.addEventListener("pointerleave", () => {
 const sliders = {};
 for (const [id, label] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
                            ["scoop", "v-scoop"], ["fillet", "v-fillet"],
-                           ["wall", "v-wall"]]) {
+                           ["wall", "v-wall"], ["blend", "v-blend"]]) {
   const el = document.getElementById(`sl-${id}`);
   const lbl = document.getElementById(label);
   el.addEventListener("input", () => {
@@ -1058,7 +1060,7 @@ for (const [id, label] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
 function syncSliderLabels() {
   for (const [id, lbl] of [["clearance", "v-clearance"], ["smooth", "v-smooth"],
                            ["scoop", "v-scoop"], ["fillet", "v-fillet"],
-                           ["wall", "v-wall"]]) {
+                           ["wall", "v-wall"], ["blend", "v-blend"]]) {
     document.getElementById(lbl).textContent = sliders[id].value;
   }
 }
@@ -1088,6 +1090,7 @@ function currentParams() {
     smooth_r: +sliders.smooth.value,
     scoop_d: +sliders.scoop.value,
     scoop_blend: +sliders.fillet.value,
+    straight_blend: +sliders.blend.value,
     scoop_mode: optScoopMode.value,
     min_wall: +sliders.wall.value,
     symmetric: optSymmetric.checked,
@@ -1430,6 +1433,11 @@ function threeView() {
   const fill = new THREE.DirectionalLight(0xffffff, 0.5);
   fill.position.set(-1, 0.6, 0.8);
   scene.add(fill);
+  // from below: only downward faces see it, so the underside (feet, rev
+  // deboss, magnets) is readable in the bottom view; top views unchanged
+  const under = new THREE.DirectionalLight(0xffffff, 1.1);
+  under.position.set(0.4, -0.6, -1.5);
+  scene.add(under);
   const controls = new OrbitControls(cam, canvas);
   controls.addEventListener("change", () => renderer.render(scene, cam));
   three = { renderer, scene, cam, controls, mesh: null,
@@ -1470,6 +1478,8 @@ function fitZoom() { // zoom so the mesh bbox fills ~90% of the pane
 // head-on orthographic views; top gets an epsilon tilt so the view
 // direction never parallels up=(0,0,1)
 const VIEW_DIRS = { iso: [1, -1, 1], top: [0, -1e-4, 1],
+                    // from below, tipped toward you: how the rev deboss reads
+                    bottom: [0, -1e-4, -1],
                     front: [0, -1, 0], right: [1, 0, 0] };
 function setView(name) {
   const t = three;
@@ -1526,8 +1536,30 @@ function showMesh(positions, indices, size) {
   geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geo.setIndex(new THREE.BufferAttribute(indices, 1));
   geo.computeVertexNormals();
+  // the rev deboss (DEBOSS_DEPTH 0.4 mm deep in deboss.js — not imported:
+  // that would pull replicad into the page bundle) is hard to see in orange:
+  // its faces — and only its faces: everything else down there reaches
+  // >= 0.5 mm (magnet + foot chamfers) — get a light highlight colour.
+  // Each CAD face has its own vertices, so colouring never bleeds.
+  const col = new Float32Array(positions.length);
+  const base = new THREE.Color(0xff7a30), hi = new THREE.Color(0xfff1d6);
+  for (let v = 0; v < positions.length / 3; v++) base.toArray(col, 3 * v);
+  let zMin = Infinity;
+  for (let i = 2; i < positions.length; i += 3) zMin = Math.min(zMin, positions[i]);
+  let debossTris = 0;
+  for (let t = 0; t < indices.length; t += 3) {
+    let zTop = -Infinity;
+    for (let k = 0; k < 3; k++) zTop = Math.max(zTop, positions[3 * indices[t + k] + 2]);
+    const dz = zTop - zMin;
+    if (dz > 0.38 && dz < 0.42) {
+      for (let k = 0; k < 3; k++) hi.toArray(col, 3 * indices[t + k]);
+      debossTris++;
+    }
+  }
+  window.__debossTris = debossTris; // UI tests check the highlight
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
   const mat = new THREE.MeshStandardMaterial({
-    color: 0xff7a30, metalness: 0.05, roughness: 0.65,
+    color: 0xffffff, vertexColors: true, metalness: 0.05, roughness: 0.65,
     flatShading: false, side: THREE.DoubleSide,
     // pushed back slightly so the edge overlay draws cleanly on top
     polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
@@ -1716,6 +1748,7 @@ function applySettings(p) {
   if (p.smooth_r != null) sliders.smooth.value = p.smooth_r;
   if (p.scoop_d != null) sliders.scoop.value = p.scoop_d;
   if (p.scoop_blend != null) sliders.fillet.value = p.scoop_blend;
+  if (p.straight_blend != null) sliders.blend.value = p.straight_blend;
   if (p.min_wall != null) sliders.wall.value = p.min_wall;
   optSymmetric.checked = p.symmetric !== false;
   optFlat.checked = !!p.flat_faithful;

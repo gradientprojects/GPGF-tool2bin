@@ -199,7 +199,7 @@ function toolField(c, toolMm, pocketPts, margin) {
  *  `info[i]` reports span i: { built, shift } (shift > 0 = moved out). */
 const MAX_SHIFT = 15.0;
 const END_REACH = 25.0; // mm of pocket searched past each end of a line
-const STRAIGHT_BLEND = 4.0; // mm: fillet where a line meets the pocket
+const STRAIGHT_BLEND = 4.0; // mm: default fillet where a line meets the pocket
 
 /** First crossing of the line through a->b by the open path `pts`
  *  (walked from pts[0], up to `reach` mm): { k, x } where x lies on
@@ -222,7 +222,8 @@ function meetLine(pts, a, b, reach) {
   return null;
 }
 
-export function straightenPocket(c, pocketPts, spans, toolMm, clearance, log) {
+export function straightenPocket(c, pocketPts, spans, toolMm, clearance, log,
+                                 blend = STRAIGHT_BLEND) {
   // the margin covers lines slid out (<= MAX_SHIFT) past the pocket
   const { sdTool, origin, H, W, probe } =
     toolField(c, toolMm, pocketPts, clearance + MAX_SHIFT + 5.0);
@@ -326,11 +327,11 @@ export function straightenPocket(c, pocketPts, spans, toolMm, clearance, log) {
     : [];
   if (!done) return { warnings, lines, info };
   // fillet where each line meets the rest of the pocket (owner: it met
-  // it at an angle, ~1 mm round): open + close with STRAIGHT_BLEND, only
+  // it at an angle, ~1 mm round): open + close with `blend` (the owner's slider), only
   // in a zone around the line's ends, so the line itself stays straight
   const base = fillMask(c, H, W, [poly], origin);
   {
-    const rPx = STRAIGHT_BLEND * PX;
+    const rPx = Math.max(0.5, blend) * PX;
     const op = opening(c, base, rPx);
     const sm = closing(c, op, rPx);
     op.delete();
@@ -569,6 +570,7 @@ export function profileResponse(c, cMm, params, log = () => {}) {
   const minWall = +(params.min_wall ?? 3.0);
   const scoopD = +(params.scoop_d ?? 25.0);
   const scoopBlend = +(params.scoop_blend ?? 4.0);
+  const straightBlend = +(params.straight_blend ?? STRAIGHT_BLEND);
   const timings = {};
   const timed = (name, fn) => {
     const t0 = performance.now();
@@ -613,7 +615,8 @@ export function profileResponse(c, cMm, params, log = () => {}) {
   const drags = Array.isArray(params.pocket_drags) && params.pocket_drags.length
     ? (sym ? mirrorDrags(params.pocket_drags) : params.pocket_drags) : [];
   const cutKey = JSON.stringify([baseKey, scoops, scoopD, scoopBlend,
-    !!params.strict_contain, straights, drags]);
+    !!params.strict_contain, straights, drags,
+    straights.length ? straightBlend : null]);
   let cut = stageCache.cut.find((e) => e.key === cutKey) || null;
   const cutHit = !!cut;
   if (cut) { // refresh its LRU slot
@@ -630,7 +633,8 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     let straightLines = [], straightInfo = [];
     if (straights.length) {
       const s = timed("straighten", () =>
-        straightenPocket(c, pts, straights, cMm, clearance, clog));
+        straightenPocket(c, pts, straights, cMm, clearance, clog,
+          straightBlend));
       cutWarnings.push(...s.warnings);
       // tag each built line with the user's line it came from
       straightLines = s.lines.map(([e0, e1, k]) => [e0, e1, straightSrc[k]]);

@@ -43,8 +43,22 @@ async function main() {
     { magnets, center: [0, 0], log });
   const before = bin3d.bbox(oc, shape);
 
-  // the cutter itself: placed in the min-x/max-y cell (bottom-left of
-  // the flipped underside), 9 mm tall, clear of magnets and chamfer
+  // which corner (owner, 2026-10-09): the cell that's bottom-left in the
+  // pocket preview, min-x / min-y — a 2x1 bin can't tell, so check 2x2
+  {
+    const c2 = bin3d.bbox(oc, deboss.debossCutter("R07", 2, 2, [0, 0]).wrapped);
+    const x2 = (c2.min[0] + c2.max[0]) / 2, y2 = (c2.min[1] + c2.max[1]) / 2;
+    assert(Math.abs(x2 + 21) < 0.2 && Math.abs(y2 + 21) < 0.2,
+      `2x2 bin: under the bottom-left cell (${x2.toFixed(2)}, ${y2.toFixed(2)}) ~ (-21, -21)`);
+    // a puzzle-piece bin passes the cell to use: it goes there
+    const c3 = bin3d.bbox(oc, deboss.debossCutter("R07", 2, 2, [0, 0], [1, 0]).wrapped);
+    const x3 = (c3.min[0] + c3.max[0]) / 2, y3 = (c3.min[1] + c3.max[1]) / 2;
+    assert(Math.abs(x3 - 21) < 0.2 && Math.abs(y3 + 21) < 0.2,
+      `given cell [1, 0]: (${x3.toFixed(2)}, ${y3.toFixed(2)}) ~ (21, -21)`);
+  }
+
+  // the cutter itself: placed in the bottom-left cell, 9 mm tall, clear
+  // of magnets and chamfer
   const cutter = deboss.debossCutter("R07", 2, 1, [0, 0]);
   const cb = bin3d.bbox(oc, cutter.wrapped);
   const tx = -21, ty = 0; // 2x1 bin: left cell center

@@ -224,6 +224,11 @@ test("straighten: a bowed stretch of pocket turns into a straight line, clear of
   const moved3 = await page.evaluate(([c, p]) => window.__profileRun(c, p),
     [tool, { ...base, straights: [[pick(-42), pick(42), null, 3]] }]);
   expect(turn(moved3)).toBeLessThan(12);
+  // the owner's slider (straight_blend): a bigger blend, a gentler corner
+  const blendAt = (mm) => page.evaluate(([c, p]) => window.__profileRun(c, p),
+    [tool, { ...base, straight_blend: mm, straights: [[pick(-42), pick(42), null, 3]] }]);
+  const sharp = turn(await blendAt(1)), soft = turn(await blendAt(8));
+  expect(soft).toBeLessThan(sharp);
   expect(moved3.logs.join(" ")).toMatch(/min clearance (0\.9[7-9]|[1-9]\.\d\d) mm/);
   // no foot: past the line's ends nothing pokes out beyond it
   const ends = r.pocketPts.filter(([x, y]) => y < -15 && Math.abs(x) >= 38 &&
@@ -525,10 +530,19 @@ test("UI: drag the outline on the photo (mirrored), undo, straighten the pocket,
   // for the STEP round trip
   const pa = onLeft(y0);
   const [ax, ay] = await onPocket(pa);
+  await expect(page.locator("#blend-row")).toBeHidden(); // no line yet
   await page.mouse.click(ax, ay);
   await straightsLen().toBe(1);
   expect(await page.evaluate(() => window.__profile.params.straights[0].length))
     .toBe(2);
+  // with a line, the straight edge blend slider shows; it drives the fit
+  await expect(page.locator("#blend-row")).toBeVisible();
+  await mark();
+  await page.locator("#sl-blend").fill("7");
+  await refit();
+  expect(await page.evaluate(() => window.__profile.params.straight_blend)).toBe(7);
+  // the slider row appearing shifted the layout: bring the preview back
+  await page.locator("#profile-view").scrollIntoViewIfNeeded();
 
   // drag the yellow line 3 mm outward: it moves parallel, stored as an
   // offset on that line

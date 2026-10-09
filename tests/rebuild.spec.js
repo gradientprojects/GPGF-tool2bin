@@ -26,6 +26,10 @@ test("3D model waits for Rebuild; export rebuilds a stale model", async ({ page 
   const stale = page.locator("#bin-stale");
   await expect(stale).toBeHidden();
   const firstFitMs = await page.evaluate(() => window.__profile.ms);
+  // the rev deboss is highlighted in the preview (owner: hard to see),
+  // and there's a bottom view to look at it
+  expect(await page.evaluate(() => window.__debossTris)).toBeGreaterThan(20);
+  await expect(page.locator('.pv[data-view="bottom"]')).toBeVisible();
 
   // layout-only tweak: cached stages, no rebuild, overlay up
   await tagBin(page);

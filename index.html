@@ -185,11 +185,15 @@
         </ul></div>
       </div>
       <div class="optrow">
-        <label><input type="checkbox" id="opt-flat"> flat faithful</label>
+        <label><input type="checkbox" id="opt-flat"> flat faithful: keep all
+          straight edges tight (automatic)</label>
         <div class="sub"><ul>
-          <li>straight tool edges stay straight (within ~0.3 mm)
-            instead of bowing outward with high smoothness</li>
-          <li>corners still round per the smoothness setting</li>
+          <li>every straight tool edge keeps a straight pocket wall, snug
+            to it (within ~0.3 mm) — no clicking</li>
+          <li>it does this by smoothing the whole outline a little less;
+            corners still round per the smoothness setting</li>
+          <li>for one edge at a time, leave this off and use Straighten in
+            the pocket preview instead</li>
         </ul></div>
       </div>
       <div class="optrow">
@@ -295,6 +299,14 @@
             close</li>
         </ul></div>
       </div>
+      <div id="blend-row" hidden>
+        <label class="slrow">straight edge blend
+          <input type="range" id="sl-blend" min="0.5" max="10" step="0.5"
+            value="4">
+          <span class="val"><span id="v-blend">4</span> mm</span></label>
+        <div class="sub">radius rounding the corner where a straightened
+          edge meets the rest of the pocket</div>
+      </div>
       <div id="profile-status" class="hint"></div>
     </section>
     <div class="pane" id="pane-profile" style="display:none">
@@ -395,6 +407,7 @@
         <button class="pv" data-view="top">top</button>
         <button class="pv" data-view="front">front</button>
         <button class="pv" data-view="right">right</button>
+        <button class="pv" data-view="bottom">bottom</button>
         <label class="pv edgetog"><input type="checkbox" id="opt-edges"
           checked> edges</label>
       </div>

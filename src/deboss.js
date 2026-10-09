@@ -1,6 +1,6 @@
 // Revision deboss: the rev string ("R01"…) cut 0.4 mm into the
-// underside, centered in the foot of the cell that reads bottom-left
-// when the bin is flipped over (tipped toward you, about X). The text
+// underside, centered in the foot of the cell that is bottom-left in the
+// pocket preview (seen from the top: min-x / min-y). The text
 // is mirrored so it reads correctly from below.
 //
 // Font: Inter Bold, subset to R + digits and renamed "T2B Rev" per the
@@ -42,11 +42,13 @@ export function debossCutter(text, nx, ny, center = [0, 0], cell = null) {
   if ((pb.width * size) / 100 > maxW) size = (100 * maxW) / pb.width;
   let bp = textBlueprints(text, { fontSize: size, fontFamily: FAMILY });
   const [cx, cy] = bp.boundingBox.center;
-  // the flipped underside's bottom-left cell is min-x/max-y in model
-  // space; mirroring across the text's horizontal axis makes it read
-  // correctly from below. A puzzle-piece bin may not have that cell:
+  // under the cell that's bottom-left in the pocket preview, i.e. seen
+  // from the top (owner, 2026-10-09: min-x / min-y — it used to be the
+  // flipped underside's bottom-left, min-x / max-y). Mirroring across
+  // the text's horizontal axis makes it read correctly from below (bin
+  // tipped toward you). A puzzle-piece bin may not have that cell:
   // `cell` = [i, j] of the one to use instead.
-  const [ci, cj] = cell || [0, ny - 1];
+  const [ci, cj] = cell || [0, 0];
   const tx = center[0] + (ci - (nx - 1) / 2) * GRID;
   const ty = center[1] + (cj - (ny - 1) / 2) * GRID;
   bp = bp.mirror([1, 0], [cx, cy], "plane").translate(tx - cx, ty - cy);

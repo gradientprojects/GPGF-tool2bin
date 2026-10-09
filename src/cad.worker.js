@@ -60,12 +60,13 @@ async function build(profile, params) {
     const text = "R" + String(rev).padStart(2, "0");
     try {
       await ensureDebossFont(fetch(debossFontUrl).then((r) => r.arrayBuffer()));
-      // puzzle-piece bin: the first kept cell reading from below
-      // (min-x / max-y first, like the full bin's bottom-left)
+      // puzzle-piece bin: the kept cell nearest the bottom-left of the
+      // pocket preview (lowest row first, then leftmost — like the full
+      // bin's min-x / min-y cell)
       let cell = null;
       const keep = profile.keepCells;
       if (keep && keep.length) {
-        cell = [...keep].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+        cell = [...keep].sort((a, b) => a[1] - b[1] || a[0] - b[0])[0];
       }
       const cutter = debossCutter(text, profile.layout.nx, profile.layout.ny,
         profile.center, cell);
