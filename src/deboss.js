@@ -1,7 +1,8 @@
 // Revision deboss: the rev string ("R01"…) cut 0.4 mm into the
 // underside, centered in the foot of the cell that is bottom-left in the
 // pocket preview (seen from the top: min-x / min-y). The text
-// is mirrored so it reads correctly from below.
+// is mirrored so it reads correctly from below, with the bin tipped
+// away from you (top edge of the text toward the bin's +y side).
 //
 // Font: Inter Bold, subset to R + digits and renamed "T2B Rev" per the
 // OFL reserved-name rule (src/assets/t2b-rev-bold.ttf).
@@ -46,11 +47,13 @@ export function debossCutter(text, nx, ny, center = [0, 0], cell = null) {
   // from the top (owner, 2026-10-09: min-x / min-y — it used to be the
   // flipped underside's bottom-left, min-x / max-y). Mirroring across
   // the text's horizontal axis makes it read correctly from below (bin
-  // tipped toward you). A puzzle-piece bin may not have that cell:
-  // `cell` = [i, j] of the one to use instead.
+  // tipped toward you), then a 180° spin puts it the other way round
+  // on the underside (owner, 2026-10-09). A puzzle-piece bin may not
+  // have that cell: `cell` = [i, j] of the one to use instead.
   const [ci, cj] = cell || [0, 0];
   const tx = center[0] + (ci - (nx - 1) / 2) * GRID;
   const ty = center[1] + (cj - (ny - 1) / 2) * GRID;
-  bp = bp.mirror([1, 0], [cx, cy], "plane").translate(tx - cx, ty - cy);
+  bp = bp.mirror([1, 0], [cx, cy], "plane").rotate(180, [cx, cy])
+    .translate(tx - cx, ty - cy);
   return bp.sketchOnPlane("XY", -0.5).extrude(0.5 + DEBOSS_DEPTH);
 }

@@ -1,8 +1,10 @@
-:root { --bg:#1e1f22; --panel:#2a2c30; --fg:#e8e8e8; --dim:#9aa0a6; --acc:#e4572e;
-        --ok:#3f9e4d; --bad:#c94f4f; --line:#42464d; --inset:#1e2024; }
+:root { --bg:#1e1f22; --panel:#2a2c30; --fg:#e8e8e8; --dim:#9aa0a6; --acc:#ff9300;
+        --acc-ink:#1e1f22; --tool:#4eb2f1; --note:#fff2cc;
+        --ok:#4eb2f1; --bad:#ff6900; --line:#42464d; --inset:#1e2024; }
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--fg);
        font:16px -apple-system, Helvetica, sans-serif; }
+a { color:var(--tool); }
 main { max-width:680px; margin:0 auto; padding:28px 16px; }
 
 /* wide: step rows — tips/controls in the left column, the matching
@@ -32,7 +34,7 @@ h2 { font-size:16px; margin:0 0 10px; color:var(--dim); }
 .check.bad .dot { background:var(--bad); }
 #caps { color:var(--dim); font-size:12px; white-space:pre-wrap; margin:12px 0 0; }
 .filerow { display:flex; gap:10px; flex-wrap:wrap; }
-.filebtn { display:inline-block; background:var(--acc); color:#fff;
+.filebtn { display:inline-block; background:var(--acc); color:var(--acc-ink);
            font-weight:600; padding:12px 18px; border-radius:8px; cursor:pointer; }
 .filebtn input { display:none; }
 
@@ -51,11 +53,11 @@ h2 { font-size:16px; margin:0 0 10px; color:var(--dim); }
       border-radius:6px; padding:4px 12px; font-size:13px; cursor:pointer; }
 .pv:hover { border-color:var(--acc); }
 .pv[aria-pressed=true] { border-color:var(--acc); background:var(--acc);
-                         color:#fff; }
+                         color:var(--acc-ink); }
 .pv:disabled { opacity:.55; cursor:default; border-color:var(--line); }
 .edhint { margin:-4px 0 8px; }
 .edhint[hidden] { display:none; }
-.ednote { color:#ffd166; } /* what an edit did (or why it couldn't) */
+.ednote { color:var(--note); } /* what an edit did (or why it couldn't) */
 #warp-preview { touch-action:none; } /* the outline is draggable */
 .edgetog { display:inline-flex; align-items:center; gap:6px;
            margin-left:auto; }
@@ -118,7 +120,7 @@ select, input[type=text], input[type=number] {
          font-size:14px; color:var(--fg); text-align:center; padding:16px;
          pointer-events:none; } /* the old model still orbits */
 .stale[hidden] { display:none; }
-.stale button { background:var(--acc); color:#fff; border:0; font:inherit;
+.stale button { background:var(--acc); color:var(--acc-ink); border:0; font:inherit;
                 font-weight:600; padding:10px 18px; border-radius:8px;
                 cursor:pointer; pointer-events:auto; }
 .stale button:disabled { opacity:.55; cursor:default; }

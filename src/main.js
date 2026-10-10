@@ -171,7 +171,7 @@ const optFine = document.getElementById("opt-fine");
 function drawContourOverlay(contourPx, warpSize) {
   const ctx = previewCnv.getContext("2d");
   const s = previewCnv.width / warpSize[0];
-  ctx.strokeStyle = "#ff4d8d";
+  ctx.strokeStyle = "#4eb2f1";
   ctx.lineWidth = 2;
   ctx.beginPath();
   contourPx.forEach(([x, y], i) => {
@@ -363,19 +363,19 @@ function drawProfile(toolMm, r) {
 
   if (r.provisional) { // fast approximation while the real fit runs
     ctx.setLineDash([6 * dpr, 4 * dpr]);
-    poly(r.pocketPts, "#ff7a30", "rgba(255,122,48,0.06)");
+    poly(r.pocketPts, "#ff9300", "rgba(255,147,0,0.06)");
     ctx.setLineDash([]);
-    ctx.fillStyle = "rgba(255,122,48,0.9)";
+    ctx.fillStyle = "rgba(255,147,0,0.9)";
     ctx.fillText("refining pocket…", 8 * dpr, 36 * dpr);
   } else {
-    poly(r.pocketPts, "#ff7a30", "rgba(255,122,48,0.12)");
+    poly(r.pocketPts, "#ff9300", "rgba(255,147,0,0.12)");
   }
-  poly(toolMm, "#9aa7b5", "rgba(154,167,181,0.25)");
+  poly(toolMm, "#4eb2f1", "rgba(78,178,241,0.22)");
   // straightened stretches as the worker built them (slid snug, ends run
   // on to the pocket; mirrored on a symmetric pocket) + a pending end
   for (const [a, b, src] of r.provisional ? [] : r.straightLines || []) {
     const sel = pocketSel && pocketSel.kind === "straight" && pocketSel.i === src;
-    ctx.strokeStyle = sel ? "#ffffff" : "#ffd166";
+    ctx.strokeStyle = sel ? "#ffffff" : "#fff2cc";
     ctx.lineWidth = (sel ? 3.5 : 2) * dpr;
     ctx.beginPath();
     ctx.moveTo(tx(a[0]), ty(a[1])); ctx.lineTo(tx(b[0]), ty(b[1]));
@@ -396,7 +396,7 @@ function drawProfile(toolMm, r) {
     const [hx, hy] = dragHandle({ at, d });
     const sel = pocketSel && pocketSel.kind === "drag" && pocketSel.i === i;
     const h = (sel ? 6 : 4.5) * dpr;
-    ctx.fillStyle = sel ? "#ffffff" : "#ff7a30";
+    ctx.fillStyle = sel ? "#ffffff" : "#ff9300";
     ctx.strokeStyle = "#1e1f22"; ctx.lineWidth = 1.5 * dpr;
     ctx.fillRect(tx(hx) - h, ty(hy) - h, 2 * h, 2 * h);
     ctx.strokeRect(tx(hx) - h, ty(hy) - h, 2 * h, 2 * h);
@@ -404,7 +404,7 @@ function drawProfile(toolMm, r) {
   if (straightAuto) { // what a click would straighten (the tangent line)
     const a = straightAuto.la, b = straightAuto.lb;
     ctx.setLineDash([5 * dpr, 4 * dpr]);
-    ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 2 * dpr;
+    ctx.strokeStyle = "#fff2cc"; ctx.lineWidth = 2 * dpr;
     ctx.beginPath();
     ctx.moveTo(tx(a[0]), ty(a[1])); ctx.lineTo(tx(b[0]), ty(b[1]));
     ctx.stroke();
@@ -421,13 +421,13 @@ function drawProfile(toolMm, r) {
     ctx.setLineDash([4 * dpr, 4 * dpr]);
     ctx.beginPath();
     ctx.arc(tx(sx), ty(sy), (scoopD / 2) * s, 0, Math.PI * 2);
-    ctx.strokeStyle = dragIdx === i ? "#8ec5ff" : "rgba(77,163,255,0.6)";
+    ctx.strokeStyle = dragIdx === i ? "#ffffff" : "rgba(242,230,255,0.7)";
     ctx.lineWidth = 1 * dpr;
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.beginPath();
     ctx.arc(tx(sx), ty(sy), 5 * dpr, 0, Math.PI * 2);
-    ctx.fillStyle = "#4da3ff"; ctx.fill();
+    ctx.fillStyle = "#f2e6ff"; ctx.fill();
   });
 }
 
@@ -901,7 +901,7 @@ function drawPhotoOutline(contourMm = null) {
   ctx.globalAlpha = 0.35;
   drawContourOverlay(c.contourPx, w.warpSize);
   ctx.restore();
-  ctx.strokeStyle = "#ff4d8d"; ctx.lineWidth = 2;
+  ctx.strokeStyle = "#4eb2f1"; ctx.lineWidth = 2;
   ctx.beginPath();
   cur.forEach((p, i) => {
     const [u, v] = fr.toPx(p);
@@ -913,7 +913,7 @@ function drawPhotoOutline(contourMm = null) {
   if (dragOn) toolDrags.forEach((op, i) => {
     const [u, v] = fr.toPx(dragHandle(op));
     const r = photoSel === i ? 6 : 4.5;
-    ctx.fillStyle = photoSel === i ? "#ffffff" : "#ff4d8d";
+    ctx.fillStyle = photoSel === i ? "#ffffff" : "#4eb2f1";
     ctx.strokeStyle = "#1e1f22"; ctx.lineWidth = 1.5;
     ctx.fillRect(u * fr.s - r, v * fr.s - r, 2 * r, 2 * r);
     ctx.strokeRect(u * fr.s - r, v * fr.s - r, 2 * r, 2 * r);
@@ -1492,8 +1492,9 @@ function fitZoom() { // zoom so the mesh bbox fills ~90% of the pane
 // head-on orthographic views; top gets an epsilon tilt so the view
 // direction never parallels up=(0,0,1)
 const VIEW_DIRS = { iso: [1, -1, 1], top: [0, -1e-4, 1],
-                    // from below, tipped toward you: how the rev deboss reads
-                    bottom: [0, -1e-4, -1],
+                    // from below, tipped away from you: how the rev deboss
+                    // reads (spun 180°, owner 2026-10-09)
+                    bottom: [0, 1e-4, -1],
                     front: [0, -1, 0], right: [1, 0, 0] };
 function setView(name) {
   const t = three;
@@ -1556,7 +1557,7 @@ function showMesh(positions, indices, size) {
   // >= 0.5 mm (magnet + foot chamfers) — get a light highlight colour.
   // Each CAD face has its own vertices, so colouring never bleeds.
   const col = new Float32Array(positions.length);
-  const base = new THREE.Color(0xff7a30), hi = new THREE.Color(0xfff1d6);
+  const base = new THREE.Color(0xff9300), hi = new THREE.Color(0xfff2cc);
   for (let v = 0; v < positions.length / 3; v++) base.toArray(col, 3 * v);
   let zMin = Infinity;
   for (let i = 2; i < positions.length; i += 3) zMin = Math.min(zMin, positions[i]);
@@ -1583,7 +1584,7 @@ function showMesh(positions, indices, size) {
   if (t.edges) { t.scene.remove(t.edges); t.edges.geometry.dispose(); }
   t.edges = new THREE.LineSegments(
     new THREE.EdgesGeometry(geo, 25),
-    new THREE.LineBasicMaterial({ color: 0x5c2d10 }));
+    new THREE.LineBasicMaterial({ color: 0x5c3500 }));
   t.edges.visible = optViewEdges.checked;
   t.scene.add(t.edges);
   geo.computeBoundingBox();
