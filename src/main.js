@@ -654,17 +654,17 @@ const edHints = {
   straight: document.getElementById("ed-hint"),
 };
 const ED_HINTS = {
-  drag: "drag the pink outline onto the tool's real edge — the pocket " +
+  drag: "drag the blue outline onto the tool's real edge — the pocket " +
     "refits around it. Tick “mirror edits” to move the matching spot on " +
     "the other side too (symmetric tools only). Click a square handle " +
     "to select a drag; Delete removes just that one.",
   pocket: "drag the orange pocket to reshape it — independent of the tool " +
-    "outline (with symmetric on, the other side follows). Drag a yellow " +
+    "outline (with symmetric on, the other side follows). Drag a cream " +
     "line to move it. Click a handle or line to select it; Delete " +
     "removes just that one.",
   straight: "click a bowed stretch of the orange pocket to snap it " +
     "straight (the dashed line shows what a click does); hold Shift for " +
-    "horizontal / vertical / 45°. Drag a yellow line to move it; click " +
+    "horizontal / vertical / 45°. Drag a cream line to move it; click " +
     "one and press Delete to remove it.",
 };
 const edNoteEl = document.getElementById("ed-note");
