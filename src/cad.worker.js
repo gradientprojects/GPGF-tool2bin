@@ -53,6 +53,7 @@ async function build(profile, params) {
       magnets, edgeStyle: edge.style || null, edgeSize: +(edge.size || 0),
       center: profile.center, pocketPts: profile.pocketPts,
       keepCells: profile.keepCells || null,
+      footClearance: +(params.foot_clearance || 0),
       log: (l) => logs.push(l),
     });
   if (!params.deboss || params.deboss.enabled) {

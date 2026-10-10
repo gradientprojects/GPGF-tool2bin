@@ -97,13 +97,17 @@ function thruSections(oc, wires, solid = true, ruled = true) {
   return s;
 }
 
-function foot(oc, cx, cy) {
+/** One Gridfinity foot. `c` (mm, >= 0): the whole profile offset inward
+ *  by c per side — every section c smaller, radii too — for a looser fit
+ *  in the baseplate (c = 0.25: band 36.7, bottom 35.1, top 41.0). */
+function foot(oc, cx, cy, c = 0) {
+  const s = (w) => w - 2 * c, r = (v) => Math.max(0.1, v - c);
   return thruSections(oc, [
-    rrectWire(oc, cx, cy, FOOT_BOT, FOOT_BOT, R_BOT, 0.0),
-    rrectWire(oc, cx, cy, FOOT_BOT + 2 * CH1, FOOT_BOT + 2 * CH1, R_BOT + CH1, CH1),
-    rrectWire(oc, cx, cy, FOOT_BOT + 2 * CH1, FOOT_BOT + 2 * CH1, R_BOT + CH1,
+    rrectWire(oc, cx, cy, s(FOOT_BOT), s(FOOT_BOT), r(R_BOT), 0.0),
+    rrectWire(oc, cx, cy, s(FOOT_BOT + 2 * CH1), s(FOOT_BOT + 2 * CH1), r(R_BOT + CH1), CH1),
+    rrectWire(oc, cx, cy, s(FOOT_BOT + 2 * CH1), s(FOOT_BOT + 2 * CH1), r(R_BOT + CH1),
       CH1 + STRAIGHT),
-    rrectWire(oc, cx, cy, FOOT_TOP, FOOT_TOP, R_TOP, FOOT_H),
+    rrectWire(oc, cx, cy, s(FOOT_TOP), s(FOOT_TOP), r(R_TOP), FOOT_H),
   ], true, true);
 }
 
@@ -500,7 +504,8 @@ export function cellCenters(nx, ny) {
 /** Port of bin3d.build_bin. Returns { shape, depth, H }. */
 export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   magnets = null, edgeStyle = null, edgeSize = 1.0,
-  center = [0, 0], pocketPts = null, keepCells = null, log = () => {},
+  center = [0, 0], pocketPts = null, keepCells = null, footClearance = 0,
+  log = () => {},
 } = {}) {
   const H = nz * 7.0;
   let depth = thickness;
@@ -529,7 +534,9 @@ export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   const cells = cellCenters(nx, ny).map(([cx, cy]) => [cx + bx, cy + by])
     .filter((_, k) => !kept ||
       kept.some(([i, j]) => i * ny + j === k));
-  for (const [cx, cy] of cells) shape = fuse(oc, shape, foot(oc, cx, cy));
+  const fc = Math.max(0, +footClearance || 0);
+  if (fc > 0) log(`feet: looser fit, profile ${fc} mm smaller per side`);
+  for (const [cx, cy] of cells) shape = fuse(oc, shape, foot(oc, cx, cy, fc));
 
   if ((edgeStyle === "fillet" || edgeStyle === "chamfer") && edgeSize > 0) {
     shape = treatEdges(oc, shape, topEdges(oc, shape, H), edgeStyle, edgeSize,

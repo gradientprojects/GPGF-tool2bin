@@ -30,6 +30,19 @@ test("3D model waits for Rebuild; export rebuilds a stale model", async ({ page 
   // and there's a bottom view to look at it
   expect(await page.evaluate(() => window.__debossTris)).toBeGreaterThan(20);
   await expect(page.locator('.pv[data-view="bottom"]')).toBeVisible();
+  // foot fit is build-time (like magnets). The looser fit is the default
+  // (owner): the first build already has it; standard marks the model
+  // stale and the rebuild drops it
+  await expect(page.locator("#opt-foot")).toHaveValue("0.25");
+  expect(await page.evaluate(() => (window.__bin.logs || [])
+    .some((l) => l.startsWith("feet: looser fit")))).toBe(true);
+  await page.selectOption("#opt-foot", "0");
+  await expect(stale).toBeVisible();
+  await page.click("#rebuild-3d");
+  await expect.poll(() => page.evaluate(() => window.__bin && window.__bin.ok &&
+    !(window.__bin.logs || []).some((l) => l.startsWith("feet: looser fit"))),
+    { timeout: 240000 }).toBe(true);
+  await idle(page);
 
   // layout-only tweak: cached stages, no rebuild, overlay up
   await tagBin(page);

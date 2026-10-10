@@ -1410,6 +1410,20 @@ for (const el of [magOd, magH]) {
 }
 const optDeboss = document.getElementById("opt-deboss");
 const optEdge = document.getElementById("opt-edge");
+// foot fit: 0 = Gridfinity spec feet; 0.25 = the whole foot profile 0.25
+// mm smaller per side (owner, 2026-10-09: matches the FeatureScript the
+// owner's other bins come from — 36.7 band / 35.1 bottom; and the owner
+// made it the DEFAULT). A build-time setting like magnets (no refit);
+// remembered per device, saved in the STEP.
+const optFoot = document.getElementById("opt-foot");
+try {
+  const v = localStorage.getItem("t2b.footfit");
+  if (v === "0" || v === "0.25") optFoot.value = v;
+} catch {}
+optFoot.addEventListener("change", () => {
+  try { localStorage.setItem("t2b.footfit", optFoot.value); } catch {}
+  markStale();
+});
 const exportBtn = document.getElementById("export-step");
 const exportNegBtn = document.getElementById("export-neg");
 
@@ -1649,6 +1663,7 @@ async function runBuild() {
         keepCells: p.puzzle && p.puzzle.on ? p.puzzle.keep : null },
       { ...p.params, rev: designRev,
         deboss: { enabled: optDeboss.checked },
+        foot_clearance: +optFoot.value,
         magnets: currentMagnets() });
     window.__bin = { ok: r.ok, depth: r.depth, H: r.H, bbox: r.bbox,
       logs: r.logs, ms: r.ms };
@@ -1764,6 +1779,10 @@ function applySettings(p) {
   }
   optDeboss.checked = !(p.deboss && p.deboss.enabled === false);
   optEdge.value = (p.edge && p.edge.style) || "";
+  if (p.foot_clearance != null) {
+    optFoot.value = +p.foot_clearance === 0.25 ? "0.25" : "0";
+    try { localStorage.setItem("t2b.footfit", optFoot.value); } catch {}
+  }
   puzzleOn = !!p.puzzle; // applies only where it saves cells
   syncSliderLabels(); // programmatic sets fire no input events
 }
