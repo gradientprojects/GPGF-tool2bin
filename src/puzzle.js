@@ -12,6 +12,19 @@ export function cellCenter(i, j, nx, ny, center) {
   return [(i - (nx - 1) / 2) * GRID + center[0], (j - (ny - 1) / 2) * GRID + center[1]];
 }
 
+/** The cell the rev deboss goes under: `want` ([i, j], picked in the 3D
+ *  view) if the bin has it, else the one nearest the bottom-left of the
+ *  pocket preview (lowest row first, then leftmost; min-x / min-y on a
+ *  full bin). `keep` = the puzzle-piece bin's kept cells, or null. */
+export function revCell(nx, ny, keep, want) {
+  const has = ([i, j]) => Number.isInteger(i) && Number.isInteger(j) &&
+    i >= 0 && i < nx && j >= 0 && j < ny &&
+    (!keep || keep.some(([a, b]) => a === i && b === j));
+  if (Array.isArray(want) && has(want)) return [want[0], want[1]];
+  if (keep && keep.length) return [...keep].sort((a, b) => a[1] - b[1] || a[0] - b[0])[0];
+  return [0, 0];
+}
+
 function inside(poly, x, y) {
   let c = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {

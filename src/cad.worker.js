@@ -10,6 +10,7 @@ import {
   buildBin, tessellate, bbox, writeStepText, tryCut, pocketBody,
 } from "./bin3d.js";
 import { ensureDebossFont, debossCutter } from "./deboss.js";
+import { revCell } from "./puzzle.js";
 import debossFontUrl from "./assets/t2b-rev-bold.ttf?url";
 
 let ready = null;
@@ -54,6 +55,7 @@ async function build(profile, params) {
       center: profile.center, pocketPts: profile.pocketPts,
       keepCells: profile.keepCells || null,
       footClearance: +(params.foot_clearance || 0),
+      round: roundOf(profile),
       log: (l) => logs.push(l),
     });
   if (!params.deboss || params.deboss.enabled) {
@@ -61,16 +63,15 @@ async function build(profile, params) {
     const text = "R" + String(rev).padStart(2, "0");
     try {
       await ensureDebossFont(fetch(debossFontUrl).then((r) => r.arrayBuffer()));
-      // puzzle-piece bin: the kept cell nearest the bottom-left of the
-      // pocket preview (lowest row first, then leftmost — like the full
-      // bin's min-x / min-y cell)
-      let cell = null;
-      const keep = profile.keepCells;
-      if (keep && keep.length) {
-        cell = [...keep].sort((a, b) => a[1] - b[1] || a[0] - b[0])[0];
-      }
+      // the cell picked in the 3D view, if this bin has it; else the
+      // (kept) cell nearest the bottom-left of the pocket preview
+      const d = params.deboss || {};
+      const cell = revCell(profile.layout.nx, profile.layout.ny,
+        profile.keepCells && profile.keepCells.length ? profile.keepCells : null,
+        d.cell);
+      const rot = [90, 180, 270].includes(+d.rot) ? +d.rot : 0;
       const cutter = debossCutter(text, profile.layout.nx, profile.layout.ny,
-        profile.center, cell);
+        profile.center, cell, rot);
       shape = tryCut(oc, shape, cutter.wrapped,
         `rev deboss '${text}' (0.4 mm, underside)`, (l) => logs.push(l));
     } catch (err) {
@@ -108,12 +109,19 @@ async function exportStep(name, rev = 1, label = null, negative = false,
   if (negative) {
     const { segs, periodic } = lastBuild.profile;
     const body = pocketBody(oc, segs, periodic, lastBuild.H - lastBuild.depth,
-      lastBuild.H);
+      lastBuild.H, roundOf(lastBuild.profile));
     negText = writeStepText(oc, body,
       { name: `${label || name} negative` });
     body.delete();
   }
   return { ok: true, text, bytes: (text || negText).length, negText };
+}
+
+/** a round tool's cradle inputs (profilestage `round`), else null */
+function roundOf(profile) {
+  const r = profile.round;
+  return r ? { mer: r.mer, axisZ: r.axisZ, a: r.a, scoops: r.scoops,
+               scoopR: r.scoopR } : null;
 }
 
 expose({ helloStep, build, exportStep });

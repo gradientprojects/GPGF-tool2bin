@@ -4,7 +4,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   GRID, GAP, chordPartner, scoopsForMode, SCOOP_MODES, legacyScoopParams,
 } from "./profilestage.js";
-import { R_TOP } from "./bin3d.js";
+import { R_TOP, FOOT_BOT } from "./bin3d.js";
+import { revCell } from "./puzzle.js";
 import { suggestSize, suggestPosition, D_MIN } from "./scoopfit.js";
 import {
   DRAG_R, dragContour, nearestIndex, snapAngle, applyToolDrags, segDist,
@@ -142,6 +143,7 @@ function showError(el, msg) {
 function clearError(el) { el.hidden = true; el.textContent = ""; }
 const previewCnv = document.getElementById("warp-preview");
 const paneWarp = document.getElementById("pane-warp");
+const paneStepNote = document.getElementById("pane-stepnote");
 const paneProfile = document.getElementById("pane-profile");
 const paneBin = document.getElementById("pane-bin");
 
@@ -229,6 +231,7 @@ async function scanPhoto(file) {
     ctx.putImageData(r.preview, 0, 0);
     warpImg = r.preview; // kept: outline edits redraw over it
     paneWarp.style.display = "block";
+    paneStepNote.hidden = true;
     const warpLine = r.mode === "template"
       ? `template '${r.page}': ${r.nMarkers} markers, ` +
         `${r.inliers}/${r.total} corner inliers (${(r.ms / 1000).toFixed(1)}s)`
@@ -387,6 +390,16 @@ function drawProfile(toolMm, r) {
     poly(r.pocketPts, "#ff9300", "rgba(255,147,0,0.12)");
   }
   poly(toolMm, "#4eb2f1", "rgba(78,178,241,0.22)");
+  if (r.round && !r.provisional) {
+    // a round tool's centre line (the cradle turns about it: x = 0)
+    const m = r.round.mer;
+    ctx.setLineDash([8 * dpr, 4 * dpr, 2 * dpr, 4 * dpr]);
+    ctx.beginPath();
+    ctx.moveTo(tx(0), ty(m[0][1] - 4)); ctx.lineTo(tx(0), ty(m[m.length - 1][1] + 4));
+    ctx.strokeStyle = "rgba(232,232,232,0.7)"; ctx.lineWidth = 1.5 * dpr;
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   // straightened stretches as the worker built them (slid snug, ends run
   // on to the pocket; mirrored on a symmetric pocket) + a pending end
   for (const [a, b, src] of r.provisional ? [] : r.straightLines || []) {
@@ -1022,8 +1035,14 @@ window.addEventListener("keydown", (e) => {
     if (straightPress) {
       straightPress = null;
       if (lastProfileDraw) drawProfile(...lastProfileDraw);
-    } else if (pocketSel) setPocketSel(null);
-    else if (photoSel >= 0) setPhotoSel(-1);
+    } else { // drop the selection AND whichever edit mode is on
+      if (pocketSel) setPocketSel(null);
+      if (photoSel >= 0) setPhotoSel(-1);
+      if (dragOn) setToggle("drag", false);
+      if (pocketOn) setToggle("pocket", false);
+      if (straightOn) setToggle("straight", false);
+      if (revPlacing) setRevPlacing(false);
+    }
   }
 });
 
@@ -1088,6 +1107,18 @@ optSymmetric.addEventListener("change", () => {
 });
 const optFlat = document.getElementById("opt-flat");
 optFlat.addEventListener("change", () => runProfile());
+// round tool (owner, 2026-10-13; round.js): the pocket becomes a cradle
+// turned about the symmetry axis, so symmetric is forced on while it is
+const optRound = document.getElementById("opt-round");
+function syncRound() {
+  if (optRound.checked) optSymmetric.checked = true;
+  optSymmetric.disabled = optRound.checked;
+}
+optRound.addEventListener("change", () => {
+  if (optRound.checked && !optSymmetric.checked) customScoops = null;
+  syncRound();
+  runProfile();
+});
 // scoop mode keeps the spots on screen where it can (dragged or auto)
 const optScoopMode = document.getElementById("opt-scoop-mode");
 optScoopMode.addEventListener("change", () => {
@@ -1110,6 +1141,9 @@ function currentParams() {
     scoop_mode: optScoopMode.value,
     min_wall: +sliders.wall.value,
     symmetric: optSymmetric.checked,
+    // only when on, so a prism design's params are exactly as before
+    round: optRound.checked ? { on: true, axis_mode: axisMode,
+      proud_mm: axisMm.proud ?? undefined, sub_mm: axisMm.sub ?? undefined } : undefined,
     max_contour: optMax.checked,
     strict_contain: optStrict.checked,
     flat_faithful: optFlat.checked,
@@ -1179,10 +1213,11 @@ async function runProfile() {
       const L = r.layout;
       profileStatus.textContent =
         `bin ${L.nx}×${L.ny}×${L.nz}u (${(L.nx * 42 - 0.5).toFixed(1)}×` +
-        `${(L.ny * 42 - 0.5).toFixed(1)}×${L.H} mm), pocket depth ${L.depth} mm` +
+        `${(L.ny * 42 - 0.5).toFixed(1)}×${L.H} mm), pocket depth ${+L.depth.toFixed(2)} mm` +
         (r.warnings.length ? ` — ⚠ ${r.warnings.join("; ")}` : "") +
         ` (${(r.ms / 1000).toFixed(1)}s)`;
       showDepthChoice(r.depthChoice);
+      showAxisChoice(r.round);
       showShapeChoice(r.puzzle);
       clearError(profileErr);
     } while (profileQueued);
@@ -1342,6 +1377,64 @@ for (const [m, btn] of Object.entries(depthBtns)) {
   });
 }
 
+// round tool: where the centre line sits replaces Flush / Shorter bin.
+// a = mm of the axis below the top (round.js roundOptions); each of
+// proud / sub-flush remembers its own mm (null = its default).
+let axisMode = "sub";
+const axisMm = { proud: null, sub: null };
+const axisBtns = { proud: document.getElementById("axis-proud"),
+                   flush: document.getElementById("axis-flush"),
+                   sub: document.getElementById("axis-sub") };
+const axisRow = document.getElementById("axis-mm-row");
+const axisIn = document.getElementById("axis-mm");
+function showAxisChoice(rd) {
+  document.getElementById("axis-choices").hidden = !rd;
+  document.getElementById("depth-choices").hidden = !!rd;
+  axisRow.hidden = !rd || rd.mode === "flush";
+  if (!rd) return;
+  const { proud, flush, sub } = rd.options;
+  const set = (btn, give, get) => {
+    btn.querySelector(".give").textContent = give;
+    btn.querySelector(".get").textContent = get;
+  };
+  const bin = (o) => `${o.H} mm bin (${o.nz}u)`;
+  const fullIn = Math.abs(sub.a - rd.r) < 0.05;
+  set(axisBtns.sub, fullIn ? "whole tool under the top"
+    : `centre line ${fmtMm(sub.mm)} mm below the top`, bin(sub));
+  set(axisBtns.flush, "centre line level with the top, half the tool in",
+    bin(flush));
+  if (proud.ok) {
+    set(axisBtns.proud, `centre line ${fmtMm(proud.mm)} mm above the top`,
+      bin(proud));
+  } else {
+    set(axisBtns.proud, "not available", "the tool would barely sit in it");
+  }
+  axisBtns.proud.disabled = !proud.ok;
+  for (const [m, btn] of Object.entries(axisBtns)) {
+    btn.setAttribute("aria-checked", String(m === rd.mode));
+  }
+  if (rd.mode !== "flush" && document.activeElement !== axisIn) {
+    axisIn.value = fmtMm(Math.abs(rd.a));
+  }
+  document.getElementById("axis-mm-dir").textContent =
+    rd.mode === "proud" ? "above the top" : "below the top";
+}
+for (const [m, btn] of Object.entries(axisBtns)) {
+  btn.addEventListener("click", () => {
+    if (axisMode === m) return;
+    axisMode = m;
+    runProfile();
+  });
+}
+axisIn.addEventListener("change", () => {
+  const v = Math.min(60, +axisIn.value);
+  // an unchanged value (a blur after the edit already applied) must not
+  // refit: that would disable Download right under the click
+  if (!(v > 0) || axisMode === "flush" || axisMm[axisMode] === v) return;
+  axisMm[axisMode] = v;
+  runProfile();
+});
+
 // bin shape: Full / Puzzle-piece (drop the cells the pocket doesn't
 // need). Offered only when that saves at least one cell (owner rule —
 // no disabled stub); off by default; a style setting like magnets, so
@@ -1474,6 +1567,12 @@ function threeView() {
   controls.addEventListener("change", () => renderer.render(scene, cam));
   three = { renderer, scene, cam, controls, mesh: null,
             viewHalf: 100, bbox: null, placed: false };
+  // UI tests: where a world point lands on screen (clicking a foot)
+  window.__toScreen = (x, y, z) => {
+    const v = new THREE.Vector3(x, y, z).project(cam);
+    const r = canvas.getBoundingClientRect();
+    return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height];
+  };
   return three;
 }
 
@@ -1562,6 +1661,139 @@ window.addEventListener("keydown", (e) => {
   snapNormal();
 });
 
+// Where the rev deboss goes (owner, 2026-10-13): by default under the
+// cell that's bottom-left in the pocket preview; "Place rev" lets a click
+// on a foot pick another, "Turn 90°" turns it (clockwise in the bottom view).
+// Build-time settings like magnets (no refit), saved in the STEP.
+let revWant = null; // [i, j] picked, or null = the default cell
+let revRot = 0;     // 0 / 90 / 180 / 270, ccw seen from the top
+let revPlacing = false;
+let revPending = false; // changed since the last build: show the marker
+const revBtns = { place: document.getElementById("rev-place"),
+                  rot: document.getElementById("rev-rot"),
+                  reset: document.getElementById("rev-reset") };
+const revHint = document.getElementById("rev-hint");
+function revLayout() {
+  const p = window.__profile;
+  if (!p || !p.ok || !p.layout) return null;
+  return { nx: p.layout.nx, ny: p.layout.ny, center: p.center,
+           keep: p.puzzle && p.puzzle.on ? p.puzzle.keep : null };
+}
+/** the cell the build will use (the picked one if this bin has it) */
+function revCellNow() {
+  const L = revLayout();
+  return L && revCell(L.nx, L.ny, L.keep, revWant);
+}
+function revUpdate() {
+  const on = optDeboss.checked && !!(three && three.mesh);
+  if (!on && revPlacing) setRevPlacing(false);
+  revBtns.place.disabled = !on;
+  revBtns.rot.disabled = !on;
+  revBtns.reset.disabled = !on || (!revWant && !revRot);
+  revBtns.rot.title = `turn the rev 90° (clockwise in the bottom view; ` +
+    `now ${revRot}°)`;
+  revMarker();
+}
+function setRevPlacing(on) {
+  revPlacing = on;
+  revBtns.place.setAttribute("aria-pressed", String(on));
+  revHint.hidden = !on;
+  revHint.textContent = on ? "click a foot to put the rev there; Turn 90° turns " +
+    "it, Esc when done" : "";
+  paneBin.classList.toggle("revplacing", on); // lighter stale veil
+  if (on) setView("bottom");
+  revMarker();
+}
+/** outline of the rev's foot + an arrow toward the text's top, drawn on
+ *  the underside while placing or until a rebuild shows the real cut */
+function revMarker() {
+  const t = three;
+  if (!t) return;
+  if (t.revMark) {
+    t.scene.remove(t.revMark);
+    t.revMark.traverse((o) => {
+      if (o.geometry) { o.geometry.dispose(); o.material.dispose(); }
+    });
+    t.revMark = null;
+  }
+  const L = revLayout(), cell = revCellNow();
+  if (t.mesh && L && cell && optDeboss.checked && (revPlacing || revPending)) {
+    const [i, j] = cell;
+    const cx = L.center[0] + (i - (L.nx - 1) / 2) * GRID;
+    const cy = L.center[1] + (j - (L.ny - 1) / 2) * GRID;
+    const z = t.bbox.min.z - 0.05, h = FOOT_BOT / 2 - 1;
+    const r = revRot * Math.PI / 180;
+    const up = [-Math.sin(r), Math.cos(r)], side = [up[1], -up[0]];
+    const at = (u, s) => new THREE.Vector3(cx + up[0] * u + side[0] * s,
+                                           cy + up[1] * u + side[1] * s, z);
+    const col = 0xc9b8ff; // lavender, like the scoop dots
+    const tris = (pts) => new THREE.BufferGeometry().setFromPoints(pts);
+    const g = new THREE.Group();
+    // the foot, tinted, with its edge
+    g.add(new THREE.Mesh(tris([at(-h, -h), at(h, -h), at(h, h),
+                               at(-h, -h), at(h, h), at(-h, h)]),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.3,
+        side: THREE.DoubleSide, depthTest: false })));
+    g.add(new THREE.LineLoop(tris([at(-h, -h), at(-h, h), at(h, h), at(h, -h)]),
+      new THREE.LineBasicMaterial({ color: col, depthTest: false })));
+    // the arrow toward the text's top: a solid head on a wide stem
+    g.add(new THREE.Mesh(tris([at(-10, -2), at(4, -2), at(4, 2),
+                               at(-10, -2), at(4, 2), at(-10, 2),
+                               at(4, -6), at(13, 0), at(4, 6)]),
+      new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide,
+        depthTest: false })));
+    g.renderOrder = 10;
+    g.traverse((o) => { o.renderOrder = 10; });
+    t.revMark = g;
+    t.scene.add(g);
+  }
+  if (t.mesh) t.renderer.render(t.scene, t.cam);
+}
+function revChanged() {
+  revPending = true;
+  markStale();
+  revUpdate();
+}
+revBtns.place.addEventListener("click", () => setRevPlacing(!revPlacing));
+revBtns.rot.addEventListener("click", () => {
+  revRot = (revRot + 90) % 360;
+  revChanged();
+});
+revBtns.reset.addEventListener("click", () => {
+  revWant = null; revRot = 0;
+  revChanged();
+});
+{
+  // a click (not an orbit drag) on a foot while placing picks its cell
+  const cnv = document.getElementById("bin-view");
+  let down = null;
+  cnv.addEventListener("pointerdown", (e) => { down = [e.clientX, e.clientY]; });
+  cnv.addEventListener("pointerup", (e) => {
+    const d = down;
+    down = null;
+    if (!revPlacing || !d || !three || !three.mesh) return;
+    if (Math.hypot(e.clientX - d[0], e.clientY - d[1]) > 4) return;
+    const rect = cnv.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, three.cam);
+    const hit = ray.intersectObject(three.mesh)[0];
+    const L = revLayout();
+    if (!hit || !L) return;
+    const want = [
+      Math.round((hit.point.x - L.center[0]) / GRID + (L.nx - 1) / 2),
+      Math.round((hit.point.y - L.center[1]) / GRID + (L.ny - 1) / 2)];
+    const got = revCell(L.nx, L.ny, L.keep, want);
+    if (got[0] !== want[0] || got[1] !== want[1]) return; // not a foot
+    const cur = revCellNow();
+    if (cur && cur[0] === want[0] && cur[1] === want[1] && revWant) return;
+    revWant = want;
+    revChanged();
+  });
+}
+
 function showMesh(positions, indices, size) {
   const t = threeView();
   if (t.mesh) { t.scene.remove(t.mesh); t.mesh.geometry.dispose(); }
@@ -1580,16 +1812,25 @@ function showMesh(positions, indices, size) {
   let zMin = Infinity;
   for (let i = 2; i < positions.length; i += 3) zMin = Math.min(zMin, positions[i]);
   let debossTris = 0;
+  const dbox = [Infinity, Infinity, -Infinity, -Infinity];
   for (let t = 0; t < indices.length; t += 3) {
     let zTop = -Infinity;
     for (let k = 0; k < 3; k++) zTop = Math.max(zTop, positions[3 * indices[t + k] + 2]);
     const dz = zTop - zMin;
     if (dz > 0.38 && dz < 0.42) {
-      for (let k = 0; k < 3; k++) hi.toArray(col, 3 * indices[t + k]);
+      for (let k = 0; k < 3; k++) {
+        const v = 3 * indices[t + k];
+        hi.toArray(col, v);
+        dbox[0] = Math.min(dbox[0], positions[v]);
+        dbox[1] = Math.min(dbox[1], positions[v + 1]);
+        dbox[2] = Math.max(dbox[2], positions[v]);
+        dbox[3] = Math.max(dbox[3], positions[v + 1]);
+      }
       debossTris++;
     }
   }
   window.__debossTris = debossTris; // UI tests check the highlight
+  window.__debossBox = debossTris ? dbox : null; // ...and where it is
   geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
   const mat = new THREE.MeshStandardMaterial({
     color: 0xffffff, vertexColors: true, metalness: 0.05, roughness: 0.65,
@@ -1680,21 +1921,25 @@ async function runBuild() {
     const r = await cadApi.build(
       { segs: p.segs, periodic: p.periodic, layout: p.layout,
         center: p.center, pocketPts: p.pocketPts, contour,
-        keepCells: p.puzzle && p.puzzle.on ? p.puzzle.keep : null },
+        keepCells: p.puzzle && p.puzzle.on ? p.puzzle.keep : null,
+        round: p.round || null },
       { ...p.params, rev: designRev,
-        deboss: { enabled: optDeboss.checked },
+        deboss: { enabled: optDeboss.checked, cell: revWant, rot: revRot },
         foot_clearance: +optFoot.value,
         magnets: currentMagnets() });
     window.__bin = { ok: r.ok, depth: r.depth, H: r.H, bbox: r.bbox,
       logs: r.logs, ms: r.ms };
+    // the rev cut is in the model now; while placing, the marker stays
+    if (window.__profile === p) revPending = false;
     showMesh(r.mesh.positions, r.mesh.indices, r.bbox.dims);
+    revUpdate();
     // surface build warnings (e.g. "rim chamfer failed; stays square")
     // that previously lived only in the hidden log
     const warns = (r.logs || []).filter((l) => l.includes("WARNING"))
       .map((l) => l.replace(/^WARNING:\s*/, ""));
     binStatus.textContent =
       `solid ${r.bbox.dims.map((v) => v.toFixed(1)).join("×")} mm, ` +
-      `pocket depth ${r.depth} mm (${(r.ms / 1000).toFixed(1)}s)` +
+      `pocket depth ${+r.depth.toFixed(2)} mm (${(r.ms / 1000).toFixed(1)}s)` +
       (warns.length ? ` — ⚠ ${warns.join("; ")}` : "");
     const logEl = document.getElementById("bin-log");
     logEl.querySelector("pre").textContent = (r.logs || []).join("\n");
@@ -1713,7 +1958,7 @@ async function runBuild() {
 }
 binThickness.addEventListener("change", runProfile);
 optMagnets.addEventListener("change", markStale);
-optDeboss.addEventListener("change", markStale);
+optDeboss.addEventListener("change", () => { markStale(); revUpdate(); });
 optEdge.addEventListener("change", runProfile);
 
 
@@ -1834,6 +2079,7 @@ function applySettings(p) {
   if (p.straight_blend != null) sliders.blend.value = p.straight_blend;
   if (p.min_wall != null) sliders.wall.value = p.min_wall;
   optSymmetric.checked = p.symmetric !== false;
+  syncRound(); // a round tool keeps symmetric on
   optFlat.checked = !!p.flat_faithful;
   if (p.max_contour != null) optMax.checked = !!p.max_contour;
   if (p.strict_contain != null) optStrict.checked = !!p.strict_contain;
@@ -1846,6 +2092,11 @@ function applySettings(p) {
     clampMag(magOd); clampMag(magH);
   }
   optDeboss.checked = !(p.deboss && p.deboss.enabled === false);
+  // where the rev goes rides with the other settings (a bin without that
+  // cell falls back to the default one at build time)
+  revWant = p.deboss && Array.isArray(p.deboss.cell) ? p.deboss.cell : null;
+  revRot = p.deboss && [90, 180, 270].includes(+p.deboss.rot) ? +p.deboss.rot : 0;
+  revUpdate();
   optEdge.value = (p.edge && p.edge.style) || "";
   // designs from before foot fit existed carry no key: they were built
   // with standard feet, so reopen them that way (not today's default)
@@ -1866,6 +2117,7 @@ async function reviseFromStep(file) {
     // no photo with a STEP: an earlier scan's photo would be misleading
     warpImg = null;
     paneWarp.style.display = "none";
+    paneStepNote.hidden = false;
     resetEdits(design.contour);
     window.__profile = null;
     window.__bin = null;
@@ -1876,6 +2128,13 @@ async function reviseFromStep(file) {
     const p = legacyScoopParams(design.params || {});
     if (p.thickness) binThickness.value = p.thickness;
     depthMode = p.depth_mode === "proud" ? "proud" : "flush";
+    // round tool: the tool's own shape, so revise restores it (a new
+    // photo starts as a plain prism, like the depth choice)
+    const rd = p.round && p.round.on ? p.round : null;
+    optRound.checked = !!rd;
+    axisMode = rd && ["proud", "flush", "sub"].includes(rd.axis_mode) ? rd.axis_mode : "sub";
+    axisMm.proud = rd && +rd.proud_mm > 0 ? +rd.proud_mm : null;
+    axisMm.sub = rd && +rd.sub_mm > 0 ? +rd.sub_mm : null;
     applySettings(p);
     customScoops = Array.isArray(p.scoops) ? p.scoops : null;
     customStraights = Array.isArray(p.straights) ? p.straights : [];
@@ -1940,9 +2199,12 @@ binName.addEventListener("input", gateUpdate);
 binThickness.addEventListener("input", gateUpdate);
 function gatePhoto(file) {
   pendingPhoto = file;
+  paneStepNote.hidden = true; // a photo now, not the STEP design
   binName.value = file.name.replace(/\.[^.]+$/, "");
   binThickness.value = "";
   depthMode = "flush";
+  optRound.checked = false; axisMode = "sub"; axisMm.proud = axisMm.sub = null;
+  syncRound();
   scanGate.style.display = "block";
   gateUpdate();
   scanStatus.textContent = "photo loaded — confirm the name, enter the " +

@@ -120,6 +120,17 @@ select, input[type=text], input[type=number] {
                object-fit:contain; }
 #bin-view { aspect-ratio:4 / 3; }
 
+/* STEP reopened: no photo — the photo's slot says so and points down
+   to the pocket preview */
+.stepnote:not([hidden]) { display:flex; flex-direction:column;
+                          align-items:center; text-align:center; }
+.stepnote p { color:var(--dim); margin:0 0 6px; max-width:36em; }
+.stepnote-arrow { font-size:56px; line-height:1; color:var(--acc);
+                  animation:stepnudge 1.6s ease-in-out infinite; }
+@keyframes stepnudge { 50% { transform:translateY(8px); } }
+@media (prefers-reduced-motion: reduce) {
+  .stepnote-arrow { animation:none; } }
+
 /* 3D preview out of date: dim the old model, offer a rebuild (no
    auto-regen — the solid takes seconds, tweaks shouldn't) */
 .viewwrap { position:relative; }
@@ -129,6 +140,8 @@ select, input[type=text], input[type=number] {
          font-size:14px; color:var(--fg); text-align:center; padding:16px;
          pointer-events:none; } /* the old model still orbits */
 .stale[hidden] { display:none; }
+/* placing the rev: the feet must stay readable under the veil */
+.revplacing .stale { background:rgba(30,31,34,.15); justify-content:flex-start; }
 .stale button { background:var(--acc); color:var(--acc-ink); border:0; font:inherit;
                 font-weight:600; padding:10px 18px; border-radius:8px;
                 cursor:pointer; pointer-events:auto; }
@@ -148,7 +161,13 @@ select, input[type=text], input[type=number] {
 .choice[aria-checked=true] { border-color:var(--acc);
                              box-shadow:inset 0 0 0 1px var(--acc); }
 .choice:disabled { opacity:.55; cursor:default; }
-@media (max-width: 420px) { .choices { grid-template-columns:1fr; } }
+.choices[hidden] { display:none; }
+/* round tool: three centre-line choices, + the mm for proud / sub-flush */
+#axis-choices { grid-template-columns:1fr 1fr 1fr; }
+.axismm { display:flex; align-items:center; gap:6px; margin-top:8px; font-size:14px; }
+.axismm[hidden] { display:none; }
+.axismm input { width:5em; }
+@media (max-width: 420px) { .choices, #axis-choices { grid-template-columns:1fr; } }
 
 /* scoop suggestions: only shown when verified to save a grid unit */
 .suggest { margin:10px 0 0; }

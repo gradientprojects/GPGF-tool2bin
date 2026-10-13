@@ -608,6 +608,9 @@ test("UI: drag the outline on the photo (mirrored), undo, straighten the pocket,
   await refit();
   expect(await page.evaluate(() => window.__profile.params.pocket_drags))
     .toEqual([pd[1]]);
+  // Escape drops the edit mode (and any selection), wherever focus is
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#ed-pocket")).toHaveAttribute("aria-pressed", "false");
 
   // export (rebuilds the stale model first), then revise the STEP
   const dl = page.waitForEvent("download", { timeout: 300000 });
@@ -626,6 +629,7 @@ test("UI: drag the outline on the photo (mirrored), undo, straighten the pocket,
   expect(back.params.straights[0][3]).toBeCloseTo(off, 6); // the moved line
   // no photo with a STEP: no outline editing, but pocket edits clear
   await expect(page.locator("#pane-warp")).toBeHidden();
+  await expect(page.locator("#pane-stepnote")).toBeVisible(); // photo's slot points down
   await expect(page.locator("#ed-clear")).toBeEnabled();
   await page.click("#ed-clear");
   await expect.poll(() => page.evaluate(() => window.__profile &&

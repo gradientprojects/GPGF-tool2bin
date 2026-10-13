@@ -145,7 +145,7 @@ async function profile({ contourMm = null, params = {} }) {
     center: r.center, scoops: r.scoops, warnings: r.warnings,
     depthChoice: r.depthChoice, timings: r.timings, cached: r.cached,
     periodic: r.periodic, segs: r.segs, straightLines: r.straightLines,
-    straightInfo: r.straightInfo, puzzle: r.puzzle, logs,
+    straightInfo: r.straightInfo, puzzle: r.puzzle, round: r.round, logs,
     ms: Math.round(performance.now() - t0) };
 }
 

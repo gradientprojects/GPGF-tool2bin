@@ -164,6 +164,12 @@
       <div id="ed-hint-photo" class="sub edhint" hidden></div>
       <canvas id="warp-preview"></canvas>
     </div>
+    <div class="pane stepnote" id="pane-stepnote" hidden>
+      <h2>STEP file opened</h2>
+      <p>This design was reopened from a STEP file, so there&rsquo;s no
+        photo to show here. Revise the pocket below.</p>
+      <div class="stepnote-arrow" aria-hidden="true">&darr;</div>
+    </div>
     </div>
 
     <div class="step">
@@ -206,8 +212,38 @@
         </ul></div>
       </div>
       <div class="optrow">
+        <label><input type="checkbox" id="opt-round"> round tool
+          (rotationally symmetric)</label>
+        <div class="sub"><ul>
+          <li>screwdrivers, drill bits, files, pens&hellip;: the pocket
+            becomes a cradle shaped to the tool (its outline turned about
+            its centre line) instead of a flat-bottomed trench</li>
+          <li>keeps symmetric on; lay the tool along the sheet&rsquo;s
+            length</li>
+          <li>choose where the centre line sits under pocket depth</li>
+        </ul></div>
+      </div>
+      <div class="optrow">
         <div class="choicehead">pocket depth</div>
-        <div class="choices" role="radiogroup" aria-label="pocket depth">
+        <div class="choices" id="axis-choices" role="radiogroup"
+          aria-label="centre line height" hidden>
+          <button type="button" class="choice" id="axis-proud"
+            role="radio" aria-checked="false">
+            <b>Proud</b><span class="give"></span><span class="get"></span>
+          </button>
+          <button type="button" class="choice" id="axis-flush"
+            role="radio" aria-checked="false">
+            <b>Axis flush</b><span class="give"></span><span class="get"></span>
+          </button>
+          <button type="button" class="choice" id="axis-sub"
+            role="radio" aria-checked="true">
+            <b>Sub-flush</b><span class="give"></span><span class="get"></span>
+          </button>
+        </div>
+        <label class="axismm" id="axis-mm-row" hidden>centre line
+          <input type="number" id="axis-mm" min="0.5" max="60" step="0.5">
+          mm <span id="axis-mm-dir">below the top</span></label>
+        <div class="choices" id="depth-choices" role="radiogroup" aria-label="pocket depth">
           <button type="button" class="choice" id="depth-flush"
             role="radio" aria-checked="true">
             <b>Flush</b><span class="give"></span><span class="get"></span>
@@ -427,7 +463,15 @@
         <button class="pv" data-view="bottom">bottom</button>
         <label class="pv edgetog"><input type="checkbox" id="opt-edges"
           checked> edges</label>
+        <button type="button" class="pv" id="rev-place" aria-pressed="false"
+          title="click a foot in the bottom view to put the rev there">Place
+          rev</button>
+        <button type="button" class="pv" id="rev-rot"
+          title="turn the rev 90° (clockwise in the bottom view)">Turn 90&deg;</button>
+        <button type="button" class="pv" id="rev-reset" disabled
+          title="rev back under the default cell, unturned">Reset rev</button>
       </div>
+      <div id="rev-hint" class="sub edhint" hidden></div>
       <div class="viewwrap">
         <canvas id="bin-view" width="560" height="420"></canvas>
         <div id="bin-stale" class="stale" hidden>

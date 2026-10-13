@@ -27,6 +27,7 @@ import { resample, detectCorners, fitProfile, sampleSegs } from "./profilefit.js
 import { roundHalfEven, GridNN } from "./nummath.js";
 import { findContours } from "./marching.js";
 import { puzzleCells, puzzleOutline } from "./puzzle.js";
+import { meridian, meridianR, roundOptions, AXIS_MODES } from "./round.js";
 
 export const GRID = 42.0;
 export const GAP = 0.5;
@@ -564,6 +565,10 @@ export function legacyScoopParams(params) {
 /** Port of server.profile_response (profile side only). */
 export function profileResponse(c, cMm, params, log = () => {}) {
   params = legacyScoopParams(params);
+  // round tool: the cradle is the pocket revolved about the symmetry
+  // axis, so the pocket must BE symmetric (round.js)
+  const round = params.round && params.round.on ? params.round : null;
+  if (round) params = { ...params, symmetric: true };
   const clearance = +(params.clearance ?? 1.0);
   const smoothR = +(params.smooth_r ?? 8.0);
   const thickness = +(params.thickness ?? 25.0);
@@ -614,72 +619,97 @@ export function profileResponse(c, cMm, params, log = () => {}) {
   });
   const drags = Array.isArray(params.pocket_drags) && params.pocket_drags.length
     ? (sym ? mirrorDrags(params.pocket_drags) : params.pocket_drags) : [];
-  const cutKey = JSON.stringify([baseKey, scoops, scoopD, scoopBlend,
-    !!params.strict_contain, straights, drags,
-    straights.length ? straightBlend : null]);
-  let cut = stageCache.cut.find((e) => e.key === cutKey) || null;
-  const cutHit = !!cut;
-  if (cut) { // refresh its LRU slot
-    stageCache.cut.splice(stageCache.cut.indexOf(cut), 1);
-    stageCache.cut.push(cut);
-  }
-  if (cut) {
-    for (const l of cut.logs) log(l);
-  } else {
-    const logs = [];
-    const clog = (l) => { logs.push(l); log(l); };
-    let segs = prof.segs, periodic = prof.periodic, pts = prof.fit;
-    const cutWarnings = [];
-    let straightLines = [], straightInfo = [];
-    if (straights.length) {
-      const s = timed("straighten", () =>
-        straightenPocket(c, pts, straights, cMm, clearance, clog,
-          straightBlend));
-      cutWarnings.push(...s.warnings);
-      // tag each built line with the user's line it came from
-      straightLines = s.lines.map(([e0, e1, k]) => [e0, e1, straightSrc[k]]);
-      // per line the user drew: built (any copy), moved out how far
-      straightInfo = params.straights.map(() =>
-        ({ built: false, shift: -Infinity, minOff: -Infinity }));
-      s.info.forEach((v, k) => {
-        const u = straightInfo[straightSrc[k]];
-        u.built = u.built || v.built;
-        u.shift = Math.max(u.shift, v.shift);
-        u.minOff = Math.max(u.minOff, v.minOff ?? -Infinity);
-      });
-      for (const u of straightInfo) { // no copy reached the build: plain 0
-        if (!Number.isFinite(u.shift)) u.shift = 0;
-        if (!Number.isFinite(u.minOff)) u.minOff = 0;
+  // withScoops false: the same edits on the scoop-less pocket — a round
+  // tool's cradle profile (its scoops are cut separately, full depth)
+  const cutStage = (withScoops) => {
+    const cutKey = JSON.stringify([baseKey, withScoops ? scoops : [], scoopD, scoopBlend,
+      !!params.strict_contain, straights, drags,
+      straights.length ? straightBlend : null]);
+    let cut = stageCache.cut.find((e) => e.key === cutKey) || null;
+    const cutHit = !!cut;
+    if (cut) { // refresh its LRU slot
+      stageCache.cut.splice(stageCache.cut.indexOf(cut), 1);
+      stageCache.cut.push(cut);
+    }
+    if (cut) {
+      for (const l of cut.logs) log(l);
+    } else {
+      const logs = [];
+      const clog = (l) => { logs.push(l); log(l); };
+      let segs = prof.segs, periodic = prof.periodic, pts = prof.fit;
+      const cutWarnings = [];
+      let straightLines = [], straightInfo = [];
+      // scoops first: hand edits were made on the pocket as drawn (scoops
+      // and all), so a line resting on a scoop lobe must find it there
+      if (withScoops && scoopD > 0 && scoops.length) {
+        const s = timed("scoops", () =>
+          addScoops(c, pts, scoops, scoopD, scoopBlend, clog));
+        segs = [s.tck]; periodic = true; pts = s.pts;
       }
-      if (s.tck) { segs = [s.tck]; periodic = true; pts = s.pts; }
-    }
-    if (drags.length) {
-      const s = timed("drag", () => dragPocket(c, pts, drags, clog));
-      segs = [s.tck]; periodic = true; pts = s.pts;
-    }
-    if (scoopD > 0 && scoops.length) {
-      const s = timed("scoops", () =>
-        addScoops(c, pts, scoops, scoopD, scoopBlend, clog));
-      segs = [s.tck]; periodic = true; pts = s.pts;
-    }
-    if (params.strict_contain) {
-      const fixed = timed("contain", () =>
-        containmentUnion(c, pts, cMm, clearance, clog));
-      if (fixed && fixed.failed) {
-        cutWarnings.push("containment fix-up failed -- lower scoop/clearance or re-scan");
-      } else if (fixed) {
-        segs = [fixed.tck]; periodic = true; pts = fixed.pts;
+      if (straights.length) {
+        const s = timed("straighten", () =>
+          straightenPocket(c, pts, straights, cMm, clearance, clog,
+            straightBlend));
+        cutWarnings.push(...s.warnings);
+        // tag each built line with the user's line it came from
+        straightLines = s.lines.map(([e0, e1, k]) => [e0, e1, straightSrc[k]]);
+        // per line the user drew: built (any copy), moved out how far
+        straightInfo = params.straights.map(() =>
+          ({ built: false, shift: -Infinity, minOff: -Infinity }));
+        s.info.forEach((v, k) => {
+          const u = straightInfo[straightSrc[k]];
+          u.built = u.built || v.built;
+          u.shift = Math.max(u.shift, v.shift);
+          u.minOff = Math.max(u.minOff, v.minOff ?? -Infinity);
+        });
+        for (const u of straightInfo) { // no copy reached the build: plain 0
+          if (!Number.isFinite(u.shift)) u.shift = 0;
+          if (!Number.isFinite(u.minOff)) u.minOff = 0;
+        }
+        if (s.tck) { segs = [s.tck]; periodic = true; pts = s.pts; }
       }
+      if (drags.length) {
+        const s = timed("drag", () => dragPocket(c, pts, drags, clog));
+        segs = [s.tck]; periodic = true; pts = s.pts;
+      }
+      if (params.strict_contain) {
+        const fixed = timed("contain", () =>
+          containmentUnion(c, pts, cMm, clearance, clog));
+        if (fixed && fixed.failed) {
+          cutWarnings.push("containment fix-up failed -- lower scoop/clearance or re-scan");
+        } else if (fixed) {
+          segs = [fixed.tck]; periodic = true; pts = fixed.pts;
+        }
+      }
+      cut = { key: cutKey, segs, periodic, pts, cutWarnings, straightLines,
+              straightInfo, logs };
+      stageCache.cut.push(cut);
+      if (stageCache.cut.length > CUT_KEEP) stageCache.cut.shift();
     }
-    cut = { key: cutKey, segs, periodic, pts, cutWarnings, straightLines,
-            straightInfo, logs };
-    stageCache.cut.push(cut);
-    if (stageCache.cut.length > CUT_KEEP) stageCache.cut.shift();
-  }
+    return [cut, cutHit];
+  };
+  const [cut, cutHit] = cutStage(true);
   let cutSegs = cut.segs, cutPeriodic = cut.periodic, pocketPts = cut.pts;
   const warnings = [...cut.cutWarnings];
 
   const L = layout(pocketPts, thickness, minWall, params.depth_mode || "flush");
+  let roundOut = null;
+  if (round) {
+    // the cradle: the scoop-less pocket's half-width about x = 0; the
+    // axis height picks the bin height (roundOptions), not the thickness
+    const bare = scoopD > 0 && scoops.length ? cutStage(false)[0].pts : pocketPts;
+    const mer = meridian(bare);
+    const r = meridianR(mer);
+    const options = roundOptions(r, { proud: round.proud_mm, sub: round.sub_mm });
+    const want = AXIS_MODES.includes(round.axis_mode) ? round.axis_mode : "sub";
+    const pick = options[want].ok ? options[want] : options.sub;
+    L.nz = pick.nz; L.H = pick.H; L.depth = pick.depth;
+    roundOut = { mode: pick.mode, a: pick.a, axisZ: pick.axisZ, r,
+      rTool: meridianR(meridian(cMm)), mer, options,
+      scoops: scoopD > 0 ? scoops : [], scoopR: scoopD / 2 };
+    log(`round tool: cradle r ${r.toFixed(2)} mm, axis ${pick.mode} ` +
+      `(${pick.a.toFixed(1)} mm below the top), ${pick.nz}u`);
+  }
   if ((prof.extra.minClearance ?? clearance) < clearance - 0.05 && !params.strict_contain) {
     warnings.push("containment not met -- lower smoothness or clearance");
   }
@@ -694,7 +724,7 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     layout: { nx: L.nx, ny: L.ny, nz: L.nz, H: L.H, depth: L.depth },
     center: L.bboxC, scoops, warnings, straightLines: cut.straightLines,
     straightInfo: cut.straightInfo, puzzle,
-    depthChoice: { mode: L.mode, options: L.options },
+    depthChoice: { mode: L.mode, options: L.options }, round: roundOut,
     timings, cached: { base: baseHit, cut: cutHit },
   };
 }

@@ -33,7 +33,8 @@ export function ensureDebossFont(buf) {
 /** Cutter solid for `text` on an nx×ny bin at `center`: a replicad
  *  shape spanning z = -0.5 … DEBOSS_DEPTH (its .wrapped is the raw
  *  TopoDS shape for bin3d's booleans). Requires ensureDebossFont. */
-export function debossCutter(text, nx, ny, center = [0, 0], cell = null) {
+export function debossCutter(text, nx, ny, center = [0, 0], cell = null,
+                             rot = 0) {
   // probe at an arbitrary size, then scale to the target cap height
   // (clamped so the text always stays on the foot's flat bottom)
   const probe = textBlueprints(text, { fontSize: 100, fontFamily: FAMILY });
@@ -49,11 +50,14 @@ export function debossCutter(text, nx, ny, center = [0, 0], cell = null) {
   // the text's horizontal axis makes it read correctly from below (bin
   // tipped toward you), then a 180° spin puts it the other way round
   // on the underside (owner, 2026-10-09). A puzzle-piece bin may not
-  // have that cell: `cell` = [i, j] of the one to use instead.
+  // have that cell: `cell` = [i, j] of the one to use instead (also the
+  // cell picked in the 3D view). `rot` (0/90/180/270) turns it about its
+  // centre on top of that: counter-clockwise seen from the top, so
+  // clockwise in the bottom view (owner, 2026-10-13).
   const [ci, cj] = cell || [0, 0];
   const tx = center[0] + (ci - (nx - 1) / 2) * GRID;
   const ty = center[1] + (cj - (ny - 1) / 2) * GRID;
-  bp = bp.mirror([1, 0], [cx, cy], "plane").rotate(180, [cx, cy])
+  bp = bp.mirror([1, 0], [cx, cy], "plane").rotate(180 + rot, [cx, cy])
     .translate(tx - cx, ty - cy);
   return bp.sketchOnPlane("XY", -0.5).extrude(0.5 + DEBOSS_DEPTH);
 }

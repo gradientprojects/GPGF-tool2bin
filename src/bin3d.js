@@ -12,6 +12,7 @@
 // `oc` is the ready opencascade instance throughout.
 import { periodicFit } from "./smoothprof.js";
 import { puzzleOutline } from "./puzzle.js";
+import { meridianR, simplify } from "./round.js";
 
 export const GRID = 42.0;
 export const GAP = 0.5;
@@ -445,13 +446,173 @@ function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log) {
   return s;
 }
 
+/** Round-tool cavity (owner, 2026-10-13; round.js). The meridian (open
+ *  [x, y] polyline, both ends on x = 0) laid at z = axisZ as straight
+ *  edges, closed along the axis, and REVOLVED 180° about the Y
+ *  axis through (0, ·, axisZ), downward: the cradle under the axis. With
+ *  `top` (axis at or under the rim) the revolve's own start and end faces
+ *  — the outline at the axis, both halves — are extruded straight up to
+ *  `top` and fused on: one exact shared face/edge where the walls meet
+ *  the cradle (a separately built outline prism only touched it
+ *  tangentially along a slightly different curve, and the cut came out
+ *  invalid). Revolve a profile, never loft circles (2026-10-04: circle
+ *  lofts give seams Bambu/Onshape can't sew). */
+/** the cradle's meridian as straight runs (round.js simplify): each
+ *  revolves into an exact cone / cylinder face; ends exactly ON the axis */
+function cradleProfile(mer) {
+  const q = simplify(mer, 0.03).map(([x, y]) => [Math.max(0, x), y]);
+  q[0][0] = 0; q[q.length - 1][0] = 0;
+  return q;
+}
+
+/** closed polygon wire through `pts` ([x, y]) at height z, straight edges */
+function polyWire(oc, pts, z) {
+  const mw = new oc.BRepBuilderAPI_MakeWire_1();
+  for (let i = 0; i < pts.length; i++) {
+    const [xa, ya] = pts[i], [xb, yb] = pts[(i + 1) % pts.length];
+    const me = new oc.BRepBuilderAPI_MakeEdge_3(
+      new oc.gp_Pnt_3(xa, ya, z), new oc.gp_Pnt_3(xb, yb, z));
+    mw.Add_1(me.Edge());
+    me.delete();
+  }
+  if (!mw.IsDone()) throw new Error("polygon wire not closed");
+  const w = mw.Wire();
+  mw.delete();
+  return w;
+}
+
+export function cradle(oc, mer, axisZ, top = null) {
+  // the meridian closed along the axis (its last point back to its first)
+  const w = polyWire(oc, cradleProfile(mer), axisZ);
+  const ax = new oc.gp_Ax1_2(new oc.gp_Pnt_3(0, 0, axisZ), new oc.gp_Dir_4(0, 1, 0));
+  // +π about +Y takes x > 0 to z < 0: the lower half
+  const mr = new oc.BRepPrimAPI_MakeRevol_1(faceFromWire(oc, w), ax, Math.PI, false);
+  let s = mr.Shape();
+  if (top !== null && top > axisZ) {
+    for (const f of [mr.FirstShape_1(), mr.LastShape_1()]) {
+      s = fuse(oc, s, prism(oc, f, top - axisZ));
+    }
+  }
+  mr.delete();
+  return s;
+}
+
+/** A round tool's pocket rim flare: pocketEntryCutter's ruled loft, but
+ *  from the cradle's own faceted outline (its walls are straight runs:
+ *  the meridian and its mirror), offset along vertex bisectors. A flare
+ *  lofted from the smooth pocket outline sat within 0.03 mm of those
+ *  walls, and that near-coincident cut took ~50 s instead of ~3. */
+function roundEntryCutter(oc, mer, size, H, style, log) {
+  const q = cradleProfile(mer);
+  // CCW: up the +x side, back down the mirrored -x side
+  const v = [...q, ...q.slice(1, -1).reverse().map(([x, y]) => [-x, y])];
+  const n = v.length;
+  const nrm = v.map((p, i) => {
+    const a = v[(i - 1 + n) % n], b = v[(i + 1) % n];
+    const e = (u, w) => {
+      const dx = w[0] - u[0], dy = w[1] - u[1], l = Math.hypot(dx, dy) || 1e-9;
+      return [dy / l, -dx / l]; // outward for CCW
+    };
+    const n1 = e(a, p), n2 = e(p, b);
+    let mx = n1[0] + n2[0], my = n1[1] + n2[1];
+    const ml = Math.hypot(mx, my) || 1e-9;
+    mx /= ml; my /= ml;
+    const k = 1 / Math.max(0.5, mx * n1[0] + my * n1[1]); // miter, capped 2×
+    return [mx * k, my * k];
+  });
+  const at = (off, z) => polyWire(oc, v.map((p, i) =>
+    [p[0] + nrm[i][0] * off, p[1] + nrm[i][1] * off]), z);
+  const wires = [at(0, H - size)];
+  if (style === "fillet") {
+    for (let i = 1; i <= 6; i++) {
+      const ang = (Math.PI / 2) * (i / 6);
+      wires.push(at((1 - Math.cos(ang)) * size, H - size + Math.sin(ang) * size));
+    }
+  } else {
+    wires.push(at(size, H));
+  }
+  wires.push(at(size, H + 0.5));
+  const s = thruSections(oc, wires, true, style !== "fillet");
+  log(`pocket entry: ${style} ${size} mm (round tool, lofted cutter)`);
+  return s;
+}
+
+/** A finger slot across a round tool (owner, 2026-10-13: "cut all the
+ *  way across"): the stadium joining the scoop disc at (±hs, cy), radius
+ *  R, as ONE prism (arcs + lines — no tangent box/cylinder pair) from z0
+ *  up `h`. hs ~ 0 (a scoop on the axis): just its disc. */
+function scoopSlot(oc, hs, cy, R, z0, h) {
+  if (hs < 1e-6) return cylinder(oc, 0, cy, z0, R, h);
+  const line = (a, b) => {
+    const me = new oc.BRepBuilderAPI_MakeEdge_3(new oc.gp_Pnt_3(...a), new oc.gp_Pnt_3(...b));
+    const e = me.Edge();
+    me.delete();
+    return e;
+  };
+  const mw = new oc.BRepBuilderAPI_MakeWire_1();
+  mw.Add_1(arcEdge(oc, [hs, cy - R, z0], [hs + R, cy, z0], [hs, cy + R, z0]));
+  mw.Add_1(line([hs, cy + R, z0], [-hs, cy + R, z0]));
+  mw.Add_1(arcEdge(oc, [-hs, cy + R, z0], [-hs - R, cy, z0], [-hs, cy - R, z0]));
+  mw.Add_1(line([-hs, cy - R, z0], [hs, cy - R, z0]));
+  if (!mw.IsDone()) throw new Error("round tool: finger slot wire not closed");
+  const w = mw.Wire();
+  mw.delete();
+  return prism(oc, faceFromWire(oc, w), h);
+}
+
+/** The round-tool pocket as cutters: the cavity (cradle, + straight
+ *  walls up past the rim unless the axis is proud) and, per finger
+ *  scoop, a slot right across under the tool to its mirror spot (owner)
+ *  at full depth (a mirrored pair shares one). `round` = {mer, axisZ, a,
+ *  scoops, scoopR} (profilestage). */
+const SCOOP_LIFT = 0.5; // mm: a round tool's slots stop this far above the floor
+export function roundCutters(oc, round, floor, top) {
+  const { mer, axisZ, a, scoops = [], scoopR = 0 } = round;
+  const out = [cradle(oc, mer, axisZ, a >= 0 ? top : null)];
+  // slots are arcs + lines that only CROSS the cradle's walls: a scoop
+  // bounded by the smooth outline ran within 0.03 mm of the faceted
+  // walls and the cut silently dropped parts of the cradle and scoops
+  // (owner screenshot, 2026-10-13). SCOOP_LIFT over the floor: at
+  // exactly the floor its bottom only touched the cradle's lowest line —
+  // a valid solid whose slivers crashed the preview mesher.
+  const z0 = floor + SCOOP_LIFT;
+  if (scoopR > 0) {
+    // scoops within 1 mm of the same height share one slot (a mirrored
+    // pair's spots differ by a hair: two near-identical slots would be
+    // near-coincident faces again), as wide as the wider of them
+    const slots = [];
+    for (const [sx, sy] of scoops) {
+      const s = slots.find((t) => Math.abs(t.y - sy) < 1);
+      if (s) s.hs = Math.max(s.hs, Math.abs(sx));
+      else slots.push({ y: sy, hs: Math.abs(sx) });
+    }
+    for (const { y, hs } of slots) out.push(scoopSlot(oc, hs, y, scoopR, z0, top - z0));
+  }
+  return out;
+}
+
 /** The negative body: the pocket cutout as its own solid — the same
  *  clamped outline prism the bin is cut with (scoops included), from the
  *  floor up to the rim, flush (no +1 overshoot, no entry chamfer, no
  *  magnets). Same coordinates as the bin. */
-export function pocketBody(oc, segs, periodic, floor, H) {
-  return prism(oc, faceFromWire(oc, profileWire(oc, segs, periodic, floor)),
-    H - floor);
+export function pocketBody(oc, segs, periodic, floor, H, round = null) {
+  if (!round) {
+    return prism(oc, faceFromWire(oc, profileWire(oc, segs, periodic, floor)),
+      H - floor);
+  }
+  // round tool: the cradle (+ walls, scoops) fused, cut off at the rim —
+  // a proud axis's cradle rises past it
+  let s = null;
+  for (const c of roundCutters(oc, round, floor, H + 1)) {
+    s = s ? fuse(oc, s, c) : c;
+  }
+  const box = new oc.BRepPrimAPI_MakeBox_4(new oc.gp_Pnt_3(-1e4, -1e4, floor - 1),
+    new oc.gp_Pnt_3(1e4, 1e4, H)).Shape();
+  const op = new oc.BRepAlgoAPI_Common_3(s, box, new oc.Message_ProgressRange_1());
+  op.Build(new oc.Message_ProgressRange_1());
+  const body = op.Shape();
+  op.delete();
+  return body;
 }
 
 /** Puzzle-piece body outline at height z: the kept cells' loop
@@ -505,6 +666,7 @@ export function cellCenters(nx, ny) {
 export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   magnets = null, edgeStyle = null, edgeSize = 1.0,
   center = [0, 0], pocketPts = null, keepCells = null, footClearance = 0,
+  round = null,
   log = () => {},
 } = {}) {
   const H = nz * 7.0;
@@ -544,16 +706,30 @@ export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   }
 
   const floor = H - depth;
-  const pocket = prism(oc, faceFromWire(oc, profileWire(oc, segs, periodic, floor)),
-    depth + 1);
-  const cutters = [pocket];
-  const entry = (edgeStyle === "fillet" || edgeStyle === "chamfer") && edgeSize > 0;
+  const cutters = round
+    ? roundCutters(oc, round, floor, H + 1)
+    : [prism(oc, faceFromWire(oc, profileWire(oc, segs, periodic, floor)),
+      depth + 1)];
+  if (round) {
+    log(`round tool: cradle r ${meridianR(round.mer).toFixed(2)} mm, axis ` +
+      `${round.a > 0 ? `${round.a.toFixed(1)} mm below` : round.a < 0
+        ? `${(-round.a).toFixed(1)} mm above` : "at"} the top`);
+  }
+  // a proud axis leaves a narrower opening than the outline: the outline
+  // flare would cut a lip the tool never reaches — no pocket rim edge
+  const entry = (edgeStyle === "fillet" || edgeStyle === "chamfer") && edgeSize > 0 &&
+    !(round && round.a < 0);
+  if (round && round.a < 0 && edgeSize > 0 && edgeStyle) {
+    log("round tool, proud axis: no pocket rim " + edgeStyle);
+  }
   // Closed outlines: the pocket wall is CLAMPED (see profileWire), so a
   // ThruSections flare (periodic sections; clamped ones abort the wasm)
   // would meet it in a different knot basis — Onshape rejected every
   // such bin (owner, 2026-10-08). Treat the rim edge itself instead,
   // after the cut. Segmented outlines keep the reference cutter.
-  if (entry && pocketPts) {
+  if (entry && round) {
+    cutters.push(roundEntryCutter(oc, round.mer, edgeSize, H, edgeStyle, log));
+  } else if (entry && pocketPts) {
     cutters.push(pocketEntryCutter(oc, segs, periodic, pocketPts, edgeSize, H,
       edgeStyle, log));
   }

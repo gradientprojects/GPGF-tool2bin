@@ -55,6 +55,19 @@ async function main() {
     const x3 = (c3.min[0] + c3.max[0]) / 2, y3 = (c3.min[1] + c3.max[1]) / 2;
     assert(Math.abs(x3 - 21) < 0.2 && Math.abs(y3 + 21) < 0.2,
       `given cell [1, 0]: (${x3.toFixed(2)}, ${y3.toFixed(2)}) ~ (21, -21)`);
+    // turned 90° (picked in the 3D view): same spot, text now runs along y
+    const c0 = bin3d.bbox(oc, deboss.debossCutter("R07", 2, 2, [0, 0], [1, 1]).wrapped);
+    const c4 = bin3d.bbox(oc, deboss.debossCutter("R07", 2, 2, [0, 0], [1, 1], 90).wrapped);
+    const x4 = (c4.min[0] + c4.max[0]) / 2, y4 = (c4.min[1] + c4.max[1]) / 2;
+    assert(Math.abs(x4 - 21) < 0.2 && Math.abs(y4 - 21) < 0.2 &&
+      Math.abs(c4.dims[0] - c0.dims[1]) < 0.05 && Math.abs(c4.dims[1] - c0.dims[0]) < 0.05,
+      `cell [1, 1] turned 90°: (${x4.toFixed(2)}, ${y4.toFixed(2)}), ` +
+      `${c4.dims[0].toFixed(1)} x ${c4.dims[1].toFixed(1)} mm (was ` +
+      `${c0.dims[0].toFixed(1)} x ${c0.dims[1].toFixed(1)})`);
+    const flat4 = bin3d.FOOT_BOT / 2 - 1.0, rim4 = 13 - (3.075 + 0.5);
+    assert(c4.min[0] > 21 - flat4 && c4.max[0] < 21 + flat4 &&
+      c4.max[0] < 21 + rim4 - 0.5 && c4.min[0] > 21 - rim4 + 0.5,
+      "turned text stays on the flat and clear of the magnet rims");
   }
 
   // the cutter itself: placed in the bottom-left cell, 9 mm tall, clear
