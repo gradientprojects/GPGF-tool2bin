@@ -66,6 +66,15 @@ h2 { font-size:16px; margin:0 0 10px; color:var(--dim); }
 #bin-log summary { cursor:pointer; }
 #bin-log pre { white-space:pre-wrap; margin:6px 0 0; }
 .hint { color:var(--dim); font-size:14px; margin:10px 0 0; }
+/* errors sit right under the control that started the action (owner
+   rule) and look like errors — never the faint status line */
+.errbox { margin:10px 0 0; padding:10px 12px; border:1px solid var(--bad);
+          border-left-width:4px; border-radius:6px; font-size:14px;
+          line-height:1.4; color:var(--fg); text-align:left;
+          background:color-mix(in srgb, var(--bad) 16%, var(--panel)); }
+.errbox::before { content:"⚠ "; color:var(--bad); font-weight:700; }
+.errbox[hidden] { display:none; }
+.stale .errbox { max-width:420px; }
 ul.hint { padding-left:20px; }
 ul.hint li { margin:6px 0; line-height:1.4; }
 .opt { color:var(--dim); font-size:15px; font-weight:normal; }

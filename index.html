@@ -66,6 +66,7 @@
           &#128194; Open image (new) or STEP file (to revise)
         </label>
       </div>
+      <div id="open-error" class="errbox" role="alert" hidden></div>
       <div id="step-choice" class="suggest" hidden>
         <div class="choicehead" id="step-choice-head"></div>
         <div class="choices">
@@ -307,6 +308,7 @@
         <div class="sub">radius rounding the corner where a straightened
           edge meets the rest of the pocket</div>
       </div>
+      <div id="profile-error" class="errbox" role="alert" hidden></div>
       <div id="profile-status" class="hint"></div>
     </section>
     <div class="pane" id="pane-profile" style="display:none">
@@ -402,6 +404,7 @@
         title="Fit test before the full print: print the NEG file in spiral vase mode (one wall, no top) and drop the tool in. The vase's outside matches the pocket wall, so its inside is about one line width smaller per side (~0.45 mm with a 0.4 mm nozzle) — if the tool fits the vase, it fits the bin. At clearances under ~0.5 mm it can feel tight in the vase yet still fit the real bin."
         aria-label="Fit test tip: print the NEG file in spiral vase mode and drop the tool in; if it fits the vase, it fits the bin (the vase is about one line width tighter per side).">&#9432;</span>
       </div>
+      <div id="export-error" class="errbox" role="alert" hidden></div>
       <div class="sub"><ul>
         <li>negative (name ends in NEG): the pocket cutout as its own
           solid — floor to rim, finger scoops included, no chamfer or
@@ -430,6 +433,7 @@
         <div id="bin-stale" class="stale" hidden>
           <span>settings changed — the 3D model is out of date</span>
           <button id="rebuild-3d">Rebuild 3D</button>
+          <div id="build-error" class="errbox" role="alert" hidden></div>
         </div>
       </div>
     </div>

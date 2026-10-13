@@ -127,6 +127,19 @@ async function cvCheck() {
 
 // ---- scan: photo -> warp preview -------------------------------------------
 const scanStatus = document.getElementById("scan-status");
+
+// errors go in an alert box right under the control that started the
+// action (owner rule), not the faint status line at the card's foot
+const openErr = document.getElementById("open-error");
+const profileErr = document.getElementById("profile-error");
+const exportErr = document.getElementById("export-error");
+const buildErr = document.getElementById("build-error");
+function showError(el, msg) {
+  el.textContent = msg;
+  el.hidden = false;
+  el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+function clearError(el) { el.hidden = true; el.textContent = ""; }
 const previewCnv = document.getElementById("warp-preview");
 const paneWarp = document.getElementById("pane-warp");
 const paneProfile = document.getElementById("pane-profile");
@@ -183,7 +196,9 @@ function drawContourOverlay(contourPx, warpSize) {
 
 async function scanPhoto(file) {
   if (!file || !file.type.startsWith("image/")) {
-    scanStatus.textContent = "that is not an image file"; return;
+    showError(openErr, `'${file ? file.name : "?"}' is not an image or ` +
+      `STEP file`);
+    return;
   }
   busyStatus(scanStatus, "reading photo…");
   window.__warp = null;
@@ -237,7 +252,8 @@ async function scanPhoto(file) {
   } catch (e) {
     if (!window.__warp) window.__warp = { ok: false, error: String(e) };
     window.__contour = { ok: false, error: String(e) };
-    scanStatus.textContent = "error: " + e.message;
+    scanStatus.textContent = "";
+    showError(openErr, "Scan failed: " + e.message);
   }
 }
 
@@ -1168,10 +1184,12 @@ async function runProfile() {
         ` (${(r.ms / 1000).toFixed(1)}s)`;
       showDepthChoice(r.depthChoice);
       showShapeChoice(r.puzzle);
+      clearError(profileErr);
     } while (profileQueued);
   } catch (e) {
     window.__profile = { ok: false, error: String(e) };
-    profileStatus.textContent = "error: " + e.message;
+    profileStatus.textContent = "";
+    showError(profileErr, "Pocket fit failed: " + e.message);
   } finally {
     profileBusy = false;
     updateStale();
@@ -1644,6 +1662,7 @@ async function runBuild() {
   buildBusy = true;
   binStale = false;
   updateStale();
+  clearError(buildErr);
   busyStatus(binStatus, "building bin solid…");
   try {
     // the tool contour rides into the STEP's embedded design so an
@@ -1683,7 +1702,8 @@ async function runBuild() {
   } catch (e) {
     window.__bin = { ok: false, error: String(e) };
     binStale = true; // keep the rebuild offer up for a retry
-    binStatus.textContent = "error: " + (e.message || e);
+    binStatus.textContent = "";
+    showError(buildErr, "3D build failed: " + (e.message || e));
   } finally {
     buildBusy = false;
     // a newer fit landed while this one was building: offer the rebuild
@@ -1706,10 +1726,16 @@ const cleanName = (s) => s.replace(/[\\/:*?"<>|\x00-\x1f]+/g, "-")
 async function exportFile(negative) {
   const p = window.__profile;
   if (!p || !p.ok) return;
+  clearError(exportErr);
   // never export a solid that doesn't match the settings on screen
   if (binStale) {
     await runBuild();
-    if (!window.__bin || !window.__bin.ok) return;
+    if (!window.__bin || !window.__bin.ok) {
+      showError(exportErr, "Not downloaded: the 3D model couldn't be " +
+        "rebuilt to match your settings" +
+        (window.__bin && window.__bin.error ? ` (${window.__bin.error})` : ""));
+      return;
+    }
   }
   const name = cleanName(binName.value) || "tool";
   const prefix = cleanName(binPrefix.value);
@@ -1730,7 +1756,8 @@ async function exportFile(negative) {
     revExported = true;
     binStatus.textContent = `exported ${fname} (${(r.bytes / 1024).toFixed(0)} KB)`;
   } catch (e) {
-    binStatus.textContent = "export error: " + (e.message || e);
+    binStatus.textContent = "";
+    showError(exportErr, "Download failed: " + (e.message || e));
   }
 }
 exportBtn.addEventListener("click", () => exportFile(false));
@@ -1752,8 +1779,48 @@ window.__profileRun = (contourMm, params) =>
 async function readStepDesign(file) {
   const text = await file.text();
   const m = [...text.matchAll(/\/\* S2S\| (.*?) \*\//gs)].map((x) => x[1]);
-  if (!m.length) throw new Error("no Tool2Bin design found in this STEP");
+  if (!m.length) throw new Error(noDesignReason(file.name, text));
   return JSON.parse(m.join(""));
+}
+
+/** Why a STEP has no design, in words that say what to open instead.
+ *  The design rides in comments, which any CAD re-save drops. */
+function noDesignReason(name, text) {
+  if (/\bNEG\.ste?p$/i.test(name)) {
+    return `'${name}' is a negative STEP — it carries no design. Open ` +
+      `the bin STEP of the same name to revise it.`;
+  }
+  const sys = stepOrigin(text);
+  if (sys && !/open cascade/i.test(sys)) {
+    const who = /onshape/i.test(sys) ? "Onshape" : sys;
+    return /GPGF-t2b|tool2bin/i.test(name)
+      ? `'${name}' was re-saved by ${who}, which removes the Tool2Bin ` +
+        `design stored inside the file. Open the original STEP you ` +
+        `downloaded from this page instead.`
+      : `'${name}' was made by ${who}, not Tool2Bin, so there's no ` +
+        `design to reopen. Open a STEP downloaded from this page.`;
+  }
+  return `'${name}' has no Tool2Bin design inside. Open a STEP ` +
+    `downloaded from this page (not a copy re-saved by CAD software).`;
+}
+
+/** FILE_NAME's originating_system (6th field), version suffix dropped. */
+function stepOrigin(text) {
+  const head = text.slice(0, 8000).replace(/\/\*[\s\S]*?\*\//g, "");
+  const fn = head.match(/FILE_NAME\s*\(([\s\S]*?)\)\s*;/);
+  if (!fn) return null;
+  const fields = [];
+  let depth = 0, cur = "", inStr = false;
+  for (const ch of fn[1]) {
+    if (ch === "'") inStr = !inStr;
+    else if (!inStr && ch === "(") depth++;
+    else if (!inStr && ch === ")") depth--;
+    else if (!inStr && depth === 0 && ch === ",") { fields.push(cur); cur = ""; continue; }
+    cur += ch;
+  }
+  fields.push(cur);
+  const sys = (fields[5] || "").replace(/'/g, "").replace(/\s+/g, " ").trim();
+  return sys.split(",")[0].trim() || null;
 }
 
 /** The reusable settings of a saved design: everything about how the
@@ -1780,10 +1847,10 @@ function applySettings(p) {
   }
   optDeboss.checked = !(p.deboss && p.deboss.enabled === false);
   optEdge.value = (p.edge && p.edge.style) || "";
-  if (p.foot_clearance != null) {
-    optFoot.value = +p.foot_clearance === 0.25 ? "0.25" : "0";
-    try { localStorage.setItem("t2b.footfit", optFoot.value); } catch {}
-  }
+  // designs from before foot fit existed carry no key: they were built
+  // with standard feet, so reopen them that way (not today's default)
+  optFoot.value = +(p.foot_clearance || 0) === 0.25 ? "0.25" : "0";
+  try { localStorage.setItem("t2b.footfit", optFoot.value); } catch {}
   puzzleOn = !!p.puzzle; // applies only where it saves cells
   syncSliderLabels(); // programmatic sets fire no input events
 }
@@ -1818,7 +1885,8 @@ async function reviseFromStep(file) {
       `design (next export is R${String(designRev).padStart(2, "0")})`;
     await runProfile();
   } catch (e) {
-    scanStatus.textContent = "error: " + e.message;
+    scanStatus.textContent = "";
+    showError(openErr, e.message);
   }
 }
 
@@ -1835,7 +1903,7 @@ async function settingsFromStep(file) {
     customScoops = null; // re-place the scoops for the copied mode
     await runProfile(); // no-op until a design is open
   } catch (e) {
-    scanStatus.textContent = "settings error: " + e.message;
+    showError(openErr, "Settings not applied: " + e.message);
   }
 }
 
@@ -1891,6 +1959,7 @@ startScan.addEventListener("click", () => {
 
 function handleFile(file) {
   if (!file) return;
+  clearError(openErr);
   pendingStep = null;
   stepChoice.hidden = true;
   if (/\.ste?p$/i.test(file.name)) {
