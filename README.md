@@ -7,15 +7,24 @@ account, no tracking. After the first load it works offline (PWA).
 
 ### What goes over the network
 
-- **Downloads only, all of them the app itself:** the page, its code,
+- **Downloads, almost all of them the app itself:** the page, its code,
   the OpenCV and OpenCASCADE engines, the blank template image the
   engine self-test checks, and the font for the revision label stamped
   on the bin. A service worker caches them, so later visits work
   offline.
-- **Nothing is sent from your device.** Opening a photo or STEP file
-  only lets the page read it inside your browser; segmentation, the
-  pocket fit and the STEP export all run locally in Web Workers. There
-  is no backend, no account, no cookies, no analytics.
+- **Your photos and files are never sent.** Opening a photo or STEP
+  file only lets the page read it inside your browser; segmentation,
+  the pocket fit and the STEP export all run locally in Web Workers.
+  There is no backend, no account, no cookies.
+- **One anonymous page-view count per visit**, via
+  [GoatCounter](https://www.goatcounter.com/), so we can tell whether
+  the tool is being used at all. No cookies, no localStorage, nothing
+  that follows you across visits or sites. GoatCounter keeps only
+  aggregate counts (path, referrer, coarse country, time); your IP
+  address is used briefly for the country and a session hash that
+  rotates within hours, then discarded, never stored. Nothing you
+  open, edit or export is included. Any content blocker drops the
+  request with no effect on the tool.
 - Your filename prefix, paper size and magnet pocket size are kept in
   the browser's localStorage, nowhere else.
 - The site is static files on GitHub Pages, which (like any web host)

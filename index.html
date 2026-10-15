@@ -18,16 +18,22 @@
     <details class="privacy" id="privacy">
       <summary>What goes over the network?</summary>
       <ul>
-        <li><b>Downloads only, all of them the app itself:</b> the page,
+        <li><b>Downloads, almost all of them the app itself:</b> the page,
           its code, the vision and CAD engines, the blank template image
           the self-test checks, and the font for the revision label on
           the bin. After the first visit they&rsquo;re cached and the app
           works offline.</li>
-        <li><b>Nothing is sent from your device.</b> Opening a photo or
+        <li><b>Your photos and files are never sent.</b> Opening a photo or
           STEP file just lets this page read it inside your browser; all
           processing happens on your computer, and the STEP you download
           is built right here. There is no server to receive anything
-          &mdash; no account, no cookies, no analytics or tracking.</li>
+          &mdash; no account, no cookies, no tracking.</li>
+        <li><b>One anonymous page-view count</b> per visit, via
+          <a href="https://www.goatcounter.com/">GoatCounter</a>, so we can
+          tell whether the tool gets used. No cookies, nothing stored on
+          your device, your IP address is never stored, and nothing you
+          open, edit or export is included. A content blocker drops it
+          with no effect on the tool.</li>
         <li>Your filename prefix, paper size and magnet size are kept in
           this browser only.</li>
         <li>The files are hosted on GitHub Pages, which, like any web
@@ -493,5 +499,13 @@
     </section>
   </main>
   <script type="module" src="./src/main.js"></script>
+  <!-- Anonymous, cookieless page-view count (GoatCounter). See README
+       "What goes over the network". Localhost/dev is not counted:
+       count.js skips local hosts unless allow_local is set. -->
+  <script
+    data-goatcounter="https://gradientprojects.goatcounter.com/count"
+    async
+    src="//gc.zgo.at/count.js"
+  ></script>
 </body>
 </html>

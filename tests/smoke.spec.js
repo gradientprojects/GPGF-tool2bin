@@ -92,5 +92,6 @@ test("no 'upload' wording; network explainer present", async ({ page }) => {
   const privacy = page.locator("#privacy");
   await expect(privacy.locator("summary")).toHaveText("What goes over the network?");
   await privacy.locator("summary").click();
-  await expect(privacy).toContainText("Nothing is sent from your device");
+  await expect(privacy).toContainText("Your photos and files are never sent");
+  await expect(privacy).toContainText("anonymous page-view count");
 });
