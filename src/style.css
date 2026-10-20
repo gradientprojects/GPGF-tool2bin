@@ -46,6 +46,7 @@ h2 { font-size:16px; margin:0 0 10px; color:var(--dim); }
 /* tool name gets the row: it's the one field people actually type in */
 .optrow > label.namerow { display:flex; }
 .namerow input { flex:1; min-width:10em; }
+.shaperow { display:flex; flex-wrap:wrap; gap:4px 18px; align-items:center; }
 
 /* 3D preview: orthographic view presets */
 .viewrow { display:flex; gap:8px; margin-bottom:10px; }

@@ -56,12 +56,23 @@
           white/light table, or you want the best accuracy — its marker
           border corrects perspective far better than four paper
           corners, and its 100 mm ruler verifies the print scale.</li>
-        <li>If you print it: 100% scale, tool goes in the gray field.</li>
+        <li>If you print it: 100% scale, tool goes inside the frame.</li>
+        <li>Shiny metal (aluminium, chrome)? Lay a matte dark sheet
+          (black card or paper) inside the frame first — covering the whole
+          field, markers left clear. Metal can look the same shade as
+          white or gray paper.</li>
       </ul>
       <a href="templates/tool2bin-template-letter.pdf" download>&#128424;
         Letter template</a> &nbsp;·&nbsp;
       <a href="templates/tool2bin-template-a4.pdf" download>&#128424;
         A4 template</a>
+      <ul class="hint">
+        <li>White or light tool (white plastic, pale 3D prints, light
+          wood)? Use the gray-field version instead:
+          <a href="templates/tool2bin-template-letter-gray.pdf" download>letter</a>
+          &nbsp;·&nbsp;
+          <a href="templates/tool2bin-template-a4-gray.pdf" download>A4</a></li>
+      </ul>
     </section>
 
     <section id="scan">
@@ -137,6 +148,23 @@
         </ul></div>
       </div>
       <div class="optrow">
+        <div class="shaperow">tool shape
+          <label><input type="radio" name="tool-shape" id="shape-flat"
+            checked> flat (default)</label>
+          <label><input type="radio" name="tool-shape" id="opt-round">
+            round (rotationally symmetric)</label></div>
+        <div class="sub"><ul>
+          <li>flat: a flat-bottomed pocket as deep as the tool&rsquo;s
+            thickness</li>
+          <li>round — screwdrivers, drill bits, files, pens&hellip;: the
+            pocket becomes a cradle shaped to the tool (its outline turned
+            about its centre line); the scanned width sets its size, so no
+            thickness is needed</li>
+          <li>round keeps symmetric on; lay the tool along the
+            sheet&rsquo;s length</li>
+        </ul></div>
+      </div>
+      <div class="optrow" id="thickness-row">
         <label>tool thickness <input type="number" id="bin-thickness"
           min="1" max="60" step="0.5" style="width:4.5em"> mm</label>
         <div class="sub"><ul>
@@ -148,8 +176,9 @@
       </div>
       <div class="optrow" id="scan-gate" style="display:none">
         <button id="start-scan" disabled>&#9654; Start scan</button>
-        <div class="sub">photo is loaded — confirm the name and enter
-          the tool&rsquo;s thickness above, then start</div>
+        <div class="sub">photo is loaded — confirm the name and the
+          tool&rsquo;s shape (and thickness, for a flat tool) above, then
+          start</div>
       </div>
       <div id="scan-status" class="hint"></div>
     </section>
@@ -198,7 +227,7 @@
         </ul></div>
       </div>
       <div class="optrow">
-        <label><input type="checkbox" id="opt-flat"> flat faithful: keep all
+        <label><input type="checkbox" id="opt-flat" checked> flat faithful: keep all
           straight edges tight (automatic)</label>
         <div class="sub"><ul>
           <li>every straight tool edge keeps a straight pocket wall, snug
@@ -215,18 +244,6 @@
           <li>mirrors the pocket across the tool&rsquo;s symmetry axis —
             evens out lighting artifacts on symmetric tools</li>
           <li>turn off for genuinely asymmetric ones</li>
-        </ul></div>
-      </div>
-      <div class="optrow">
-        <label><input type="checkbox" id="opt-round"> round tool
-          (rotationally symmetric)</label>
-        <div class="sub"><ul>
-          <li>screwdrivers, drill bits, files, pens&hellip;: the pocket
-            becomes a cradle shaped to the tool (its outline turned about
-            its centre line) instead of a flat-bottomed trench</li>
-          <li>keeps symmetric on; lay the tool along the sheet&rsquo;s
-            length</li>
-          <li>choose where the centre line sits under pocket depth</li>
         </ul></div>
       </div>
       <div class="optrow">

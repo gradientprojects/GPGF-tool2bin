@@ -1108,17 +1108,32 @@ optSymmetric.addEventListener("change", () => {
 const optFlat = document.getElementById("opt-flat");
 optFlat.addEventListener("change", () => runProfile());
 // round tool (owner, 2026-10-13; round.js): the pocket becomes a cradle
-// turned about the symmetry axis, so symmetric is forced on while it is
+// turned about the symmetry axis, so symmetric is forced on while it is.
+// Picked as the tool shape next to the name (owner, 2026-10-19): the
+// cradle is sized from the scanned width, so round hides the thickness.
 const optRound = document.getElementById("opt-round");
+const shapeFlat = document.getElementById("shape-flat");
+const thicknessRow = document.getElementById("thickness-row");
+let lastRTool = null; // scanned tool radius of the last round profile
 function syncRound() {
   if (optRound.checked) optSymmetric.checked = true;
   optSymmetric.disabled = optRound.checked;
+  thicknessRow.hidden = optRound.checked;
 }
-optRound.addEventListener("change", () => {
+function onShape() {
   if (optRound.checked && !optSymmetric.checked) customScoops = null;
   syncRound();
+  gateUpdate();
+  if (pendingPhoto || !window.__contour || !window.__contour.ok) return;
+  // round -> flat after a scan: a round tool is about as thick as it is
+  // wide, so pre-fill from the scanned width rather than block on it
+  if (!optRound.checked && !(+binThickness.value >= 1) && lastRTool) {
+    binThickness.value = String(Math.ceil(lastRTool * 4) / 2);
+  }
   runProfile();
-});
+}
+optRound.addEventListener("change", onShape);
+shapeFlat.addEventListener("change", onShape);
 // scoop mode keeps the spots on screen where it can (dragged or auto)
 const optScoopMode = document.getElementById("opt-scoop-mode");
 optScoopMode.addEventListener("change", () => {
@@ -1218,6 +1233,7 @@ async function runProfile() {
         ` (${(r.ms / 1000).toFixed(1)}s)`;
       showDepthChoice(r.depthChoice);
       showAxisChoice(r.round);
+      if (r.round) lastRTool = r.round.rTool;
       showShapeChoice(r.puzzle);
       clearError(profileErr);
     } while (profileQueued);
@@ -2131,7 +2147,7 @@ async function reviseFromStep(file) {
     // round tool: the tool's own shape, so revise restores it (a new
     // photo starts as a plain prism, like the depth choice)
     const rd = p.round && p.round.on ? p.round : null;
-    optRound.checked = !!rd;
+    optRound.checked = !!rd; shapeFlat.checked = !rd;
     axisMode = rd && ["proud", "flush", "sub"].includes(rd.axis_mode) ? rd.axis_mode : "sub";
     axisMm.proud = rd && +rd.proud_mm > 0 ? +rd.proud_mm : null;
     axisMm.sub = rd && +rd.sub_mm > 0 ? +rd.sub_mm : null;
@@ -2192,8 +2208,8 @@ for (const [id, fn] of [["step-revise", reviseFromStep],
 let pendingPhoto = null;
 const scanGate = document.getElementById("scan-gate");
 const startScan = document.getElementById("start-scan");
-const gateOk = () => cleanName(binName.value).length > 0 &&
-  +binThickness.value >= 1 && +binThickness.value <= 60;
+const gateOk = () => cleanName(binName.value).length > 0 && (optRound.checked ||
+  (+binThickness.value >= 1 && +binThickness.value <= 60));
 const gateUpdate = () => { startScan.disabled = !gateOk(); };
 binName.addEventListener("input", gateUpdate);
 binThickness.addEventListener("input", gateUpdate);
@@ -2203,13 +2219,18 @@ function gatePhoto(file) {
   binName.value = file.name.replace(/\.[^.]+$/, "");
   binThickness.value = "";
   depthMode = "flush";
-  optRound.checked = false; axisMode = "sub"; axisMm.proud = axisMm.sub = null;
+  // a new photo after a scan starts flat; a shape picked before the
+  // first photo is kept
+  if (window.__contour && window.__contour.ok) {
+    optRound.checked = false; shapeFlat.checked = true;
+  }
+  axisMode = "sub"; axisMm.proud = axisMm.sub = null; lastRTool = null;
   syncRound();
   scanGate.style.display = "block";
   gateUpdate();
-  scanStatus.textContent = "photo loaded — confirm the name, enter the " +
-    "tool's thickness, and start the scan";
-  binThickness.focus();
+  scanStatus.textContent = "photo loaded — confirm the name and the tool's " +
+    "shape (and thickness, for a flat tool), then start the scan";
+  if (!optRound.checked) binThickness.focus();
 }
 startScan.addEventListener("click", () => {
   if (!pendingPhoto || !gateOk()) return;

@@ -23,6 +23,8 @@ const PLAN = [
 async function runChain(page, photo, fine = false) {
   await page.goto("/");
   if (fine) await page.check("#opt-fine");
+  // expectations predate flat faithful defaulting on (2026-10-19)
+  await page.evaluate(() => { document.getElementById("opt-flat").checked = false; });
   await page.setInputFiles("#photo", path.join(PHOTOS, photo));
   await page.fill("#bin-thickness", "25");
   await page.click("#start-scan");
