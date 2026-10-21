@@ -145,6 +145,39 @@ async function main() {
     const m = bin3d.tessellate(oc, shape);
     assert(m.indices.length > 0, "scoops: the preview mesh builds");
   }
+  // finger scoop fillet + rim chamfer around the slots (owner bug
+  // 2026-10-21: both were sharp in round mode). The slot outline's own
+  // fillet arcs say where: just inside an arc is slot (down to its
+  // floor), just outside is the rim chamfer (H − 1 + d at d mm out).
+  for (const mode of ["sub", "flush"]) {
+    const o = opts[mode], logs = [];
+    const R = 6, blend = 6;
+    const { shape, H } = bin3d.buildBin(oc, [tck], true, 1, 4, o.nz, o.depth, {
+      center, pocketPts: pts, edgeStyle: "chamfer", edgeSize: 1.0, magnets,
+      log: (l) => logs.push(l),
+      round: { mer, axisZ: o.axisZ, a: o.a, scoops: [[-11, 42], [11, 42]], scoopR: R, blend } });
+    assert(bin3d.isValid(oc, shape) && logs.some((l) => /6\.0 mm fillet at the walls/.test(l)),
+      `${mode}: filleted finger slot valid — ${logs.filter((l) => /slot/.test(l)).join(" | ")}`);
+    assert(bin3d.tessellate(oc, shape).indices.length > 0, `${mode}: filleted slot mesh builds`);
+    if (mode === "sub") {
+      fs.writeFileSync(path.join(APP, "test-results", "round-scoops.step"),
+        bin3d.writeStepText(oc, shape, { name: "round scoops test bin" }));
+    }
+    const chain = bin3d.slotOutline(bin3d.cradlePlan(mer), 11, 42, R, blend);
+    const arcs = chain.filter((e) => e.type === "arc");
+    assert(arcs.filter((e) => !e.convex).length === 4, `${mode}: four fillet arcs`);
+    const floorZ = H - o.depth + 0.5;
+    for (const e of arcs) {
+      const M = [e.c[0] + e.md[0] * e.r, e.c[1] + e.md[1] * e.r];
+      const n = e.convex ? e.md : [-e.md[0], -e.md[1]]; // toward the material
+      const at = (d) => top(shape, M[0] + n[0] * d, M[1] + n[1] * d);
+      const zin = at(-0.3), zc = at(0.5), zo = at(2);
+      const tag = `${mode}: ${e.convex ? "scoop" : "fillet"} arc at (${M[0].toFixed(1)}, ${M[1].toFixed(1)})`;
+      assert(Math.abs(zin - floorZ) < 0.05, `${tag}: slot inside, z ${zin.toFixed(2)} ~ ${floorZ.toFixed(2)}`);
+      assert(Math.abs(zc - (H - 0.45)) < 0.06, `${tag}: rim chamfer 0.5 mm out, z ${zc.toFixed(2)} ~ ${(H - 0.45).toFixed(2)}`);
+      assert(Math.abs(zo - H) < 0.01, `${tag}: full height 2 mm out`);
+    }
+  }
   console.log("ROUND OK");
 }
 main();

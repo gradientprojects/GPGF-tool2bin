@@ -117,11 +117,27 @@ async function exportStep(name, rev = 1, label = null, negative = false,
   return { ok: true, text, bytes: (text || negText).length, negText };
 }
 
+/** preview mesh of the last build's negative body (same solid the
+ *  negative STEP writes) */
+async function negativeMesh() {
+  const oc = await init();
+  if (!lastBuild) throw new Error("no bin built yet");
+  const { segs, periodic } = lastBuild.profile;
+  const body = pocketBody(oc, segs, periodic, lastBuild.H - lastBuild.depth,
+    lastBuild.H, roundOf(lastBuild.profile));
+  const mesh = tessellate(oc, body);
+  body.delete();
+  return {
+    positions: Float32Array.from(mesh.positions),
+    indices: Uint32Array.from(mesh.indices),
+  };
+}
+
 /** a round tool's cradle inputs (profilestage `round`), else null */
 function roundOf(profile) {
   const r = profile.round;
   return r ? { mer: r.mer, axisZ: r.axisZ, a: r.a, scoops: r.scoops,
-               scoopR: r.scoopR } : null;
+               scoopR: r.scoopR, blend: r.blend } : null;
 }
 
-expose({ helloStep, build, exportStep });
+expose({ helloStep, build, exportStep, negativeMesh });

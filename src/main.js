@@ -207,6 +207,7 @@ async function scanPhoto(file) {
   window.__contour = null;
   window.__profile = null;
   window.__bin = null;
+  scanIou = null; syncSymWarn();
   customScoops = null; // fresh tool, fresh auto-placement
   warpImg = null;
   resetEdits(null);
@@ -242,6 +243,8 @@ async function scanPhoto(file) {
       (p) => prog2(p.frac, p.stage));
     if (!r2.ok) throw new Error(r2.error);
     window.__contour = r2;
+    scanIou = r2.iou;
+    syncSymWarn();
     resetEdits(r2.contourMm);
     drawContourOverlay(r2.contourPx, r.warpSize);
     const bb = r2.contourMm.reduce((m, [x, y]) => [
@@ -1103,8 +1106,25 @@ function syncSliderLabels() {
 const optSymmetric = document.getElementById("opt-symmetric");
 optSymmetric.addEventListener("change", () => {
   customScoops = null; // mirrored outline moves the auto spots
+  syncSymWarn();
   runProfile();
 });
+// a scan whose halves barely match (owner, 2026-10-21: tilted snips at
+// mirror IoU 0.375) gets a pocket mirrored across a guessed axis —
+// say so under the box. Symmetric tools scan 0.95-0.99, scissors 0.82.
+const SYM_WARN_IOU = 0.75;
+const symWarn = document.getElementById("sym-warn");
+let scanIou = null; // mirror match of the last scan; null for a STEP
+function syncSymWarn() {
+  const bad = scanIou != null && scanIou < SYM_WARN_IOU && optSymmetric.checked;
+  symWarn.hidden = !bad;
+  symWarn.textContent = bad
+    ? `This tool doesn’t look mirror-symmetric (its halves match ` +
+      `${Math.round(scanIou * 100)}%), so the pocket is mirrored across a ` +
+      `best-guess axis and may come out too big. Turn symmetric off unless ` +
+      `the tool really is symmetric.`
+    : "";
+}
 const optFlat = document.getElementById("opt-flat");
 optFlat.addEventListener("change", () => runProfile());
 // round tool (owner, 2026-10-13; round.js): the pocket becomes a cradle
@@ -1118,6 +1138,7 @@ let lastRTool = null; // scanned tool radius of the last round profile
 function syncRound() {
   if (optRound.checked) optSymmetric.checked = true;
   optSymmetric.disabled = optRound.checked;
+  syncSymWarn();
   thicknessRow.hidden = optRound.checked;
 }
 function onShape() {
@@ -1862,6 +1883,8 @@ function showMesh(positions, indices, size) {
     new THREE.LineBasicMaterial({ color: 0x5c3500 }));
   t.edges.visible = optViewEdges.checked;
   t.scene.add(t.edges);
+  negDirty = true; // a new bin: its negative follows on demand
+  if (optNeg.checked) showNegative();
   geo.computeBoundingBox();
   t.bbox = geo.boundingBox;
   t.viewHalf = Math.max(size[0], size[1], size[2]) * 0.72;
@@ -1875,6 +1898,56 @@ function showMesh(positions, indices, size) {
     t.renderer.render(t.scene, t.cam);
   }
 }
+
+// negative body preview (owner, 2026-10-21): the solid the negative
+// STEP holds, drawn in blue inside a see-through bin. Built in the CAD
+// worker from the bin on screen, only while the box is ticked.
+const optNeg = document.getElementById("opt-neg");
+let negDirty = true, negSeq = 0;
+function negLook(on) {
+  const t = threeView();
+  if (t.mesh) {
+    const m = t.mesh.material;
+    m.transparent = on; m.opacity = on ? 0.18 : 1; m.depthWrite = !on;
+    m.needsUpdate = true;
+  }
+  if (t.edges) t.edges.material.opacity = on ? 0.3 : 1;
+  if (t.edges) t.edges.material.transparent = on;
+  if (t.neg) t.neg.visible = on;
+}
+async function showNegative() {
+  const t = threeView();
+  negLook(true);
+  if (negDirty) {
+    negDirty = false;
+    const seq = ++negSeq;
+    let r;
+    try { r = await cadApi.negativeMesh(); } catch (e) {
+      negDirty = true;
+      showError(buildErr, "Negative preview failed: " + (e.message || e));
+      return;
+    }
+    if (seq !== negSeq) return; // a newer bin replaced this one
+    if (t.neg) { t.scene.remove(t.neg); t.neg.geometry.dispose(); }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(r.positions, 3));
+    geo.setIndex(new THREE.BufferAttribute(r.indices, 1));
+    geo.computeVertexNormals();
+    t.neg = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      color: 0x4aa8ff, metalness: 0.05, roughness: 0.6,
+      side: THREE.DoubleSide }));
+    t.neg.renderOrder = -1; // opaque first, the ghost bin over it
+    t.neg.visible = optNeg.checked;
+    t.scene.add(t.neg);
+    window.__negTris = r.indices.length / 3; // UI test hook
+  }
+  t.renderer.render(t.scene, t.cam);
+}
+optNeg.addEventListener("change", () => {
+  if (!three || !three.mesh) return;
+  if (optNeg.checked) showNegative();
+  else { negLook(false); three.renderer.render(three.scene, three.cam); }
+});
 
 let resizeTimer = 0;
 window.addEventListener("resize", () => {
@@ -2130,6 +2203,7 @@ async function reviseFromStep(file) {
     if (!design.contour) throw new Error("design has no contour (old export?)");
     window.__warp = null;
     window.__contour = { ok: true, contourMm: design.contour, fromStep: true };
+    scanIou = null; syncSymWarn();
     // no photo with a STEP: an earlier scan's photo would be misleading
     warpImg = null;
     paneWarp.style.display = "none";

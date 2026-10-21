@@ -30,6 +30,13 @@ test("3D model waits for Rebuild; export rebuilds a stale model", async ({ page 
   // and there's a bottom view to look at it
   expect(await page.evaluate(() => window.__debossTris)).toBeGreaterThan(20);
   await expect(page.locator('.pv[data-view="bottom"]')).toBeVisible();
+  // negative body preview (owner, 2026-10-21): off by default, built on
+  // demand when ticked
+  expect(await page.evaluate(() => window.__negTris)).toBeUndefined();
+  await page.check("#opt-neg");
+  await expect.poll(() => page.evaluate(() => window.__negTris || 0),
+    { timeout: 60000 }).toBeGreaterThan(20);
+  await page.uncheck("#opt-neg");
   // foot fit is build-time (like magnets). The looser fit is the default
   // (owner): the first build already has it; standard marks the model
   // stale and the rebuild drops it

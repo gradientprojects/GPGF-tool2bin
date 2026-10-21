@@ -48,16 +48,63 @@ test("end scoops that cost a unit: smaller size and new spot found", () => {
   expect(s).toMatchObject({ d: 17, nx: 2, ny: 1 });
   expect(s.d).toBeGreaterThanOrEqual(D_MIN);
   expect(unitsOf(fit, sc, s.d, 3)).toEqual({ nx: 2, ny: 1 });
+  // a same-height pair on a wide tool sits on its short ends — never
+  // suggested there (owner, 2026-10-21)
+  expect(suggestPosition(fit, sc, 25, 3, cur)).toBeNull();
+});
+
+/** dense polygon through the given corners */
+function poly(corners, step = 0.25) {
+  const pts = [];
+  corners.forEach((a, i) => {
+    const b = corners[(i + 1) % corners.length];
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+    for (let k = 0; k < n; k++)
+      pts.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]);
+  });
+  return pts;
+}
+
+test("move suggestion never puts finger scoops on a short edge", () => {
+  // a tall bar (owner's screenshot, 2026-10-21): side scoops cost a unit
+  // and only the bottom end would save it, so nothing is suggested
+  const bar = poly([[-10, -60], [10, -60], [10, 60], [-10, 60]]);
+  const sc = [[-10, 0], [10, 0]];
+  const cur = unitsOf(bar, sc, 25, 3);
+  expect(cur).toEqual({ nx: 2, ny: 4 });
+  expect(unitsOf(bar, [[0, -60]], 25, 3)).toMatchObject({ nx: 1 }); // the end would
+  expect(suggestPosition(bar, sc, 25, 3, cur, "mirror")).toBeNull();
+  // free: one scoop may join the other on the same long side, but clear
+  // of it and of both ends (it once landed right on top of the other)
+  const f = suggestPosition(bar, sc, 25, 3, cur, "free");
+  if (f) {
+    const [p, q] = f.scoops;
+    expect(Math.hypot(p[0] - q[0], p[1] - q[1])).toBeGreaterThanOrEqual(25);
+    for (const s of f.scoops) {
+      expect(Math.abs(s[0])).toBeCloseTo(10, 0);
+      expect(Math.abs(s[1]) + 12.5).toBeLessThanOrEqual(60);
+    }
+  }
+  // one scoop on the side already fits 1 unit wide: nothing to save
+  expect(unitsOf(bar, [sc[1]], 25, 3)).toEqual({ nx: 1, ny: 4 });
+});
+
+test("mirrored pair moves down a long side to where the tool narrows", () => {
+  // 30 mm head over an 8 mm shaft: scoops at the head cost a unit
+  const fit = poly([[-4, -60], [4, -60], [4, 20], [15, 20], [15, 60],
+                    [-15, 60], [-15, 20], [-4, 20]]);
+  const sc = [[-15, 40], [15, 40]];
+  const cur = unitsOf(fit, sc, 25, 3);
+  expect(cur).toEqual({ nx: 2, ny: 4 });
   const m = suggestPosition(fit, sc, 25, 3, cur);
-  expect(m).toMatchObject({ nx: 2, ny: 1 });
-  // a mirrored pair moved off the ends toward one long side (the nearest
-  // valid spots sit where the end caps turn into the side)
+  expect(m).toMatchObject({ nx: 1, ny: 4 });
   const [p, q] = m.scoops;
-  expect(p[0]).toBeCloseTo(-q[0], 0);
-  expect(Math.abs(p[1])).toBeGreaterThan(5);
-  expect(Math.abs(p[0])).toBeLessThan(30);
-  expect(Math.sign(p[1])).toBe(Math.sign(q[1]));
-  expect(unitsOf(fit, m.scoops, 25, 3)).toEqual({ nx: 2, ny: 1 });
+  expect(p[1]).toBeCloseTo(q[1], 1);              // same height
+  expect(Math.abs(p[0])).toBeCloseTo(4, 0);       // on the shaft's sides
+  expect(Math.abs(q[0])).toBeCloseTo(4, 0);
+  expect(p[1]).toBeLessThan(20);
+  expect(p[1] - 12.5).toBeGreaterThanOrEqual(-60); // clear of the end
+  expect(unitsOf(fit, m.scoops, 25, 3)).toEqual({ nx: 1, ny: 4 });
 });
 
 test("no suggestion when the scoops don't cost a unit", () => {
@@ -143,10 +190,8 @@ test("move suggestion: independent / single scoops move alone", () => {
   expect(unitsOf(fit, f.scoops, 25, 3)).toEqual({ nx: 2, ny: 1 });
   const kept = f.scoops.filter((p) => sc.some((q) => q[0] === p[0] && q[1] === p[1]));
   expect(kept.length).toBe(1);
-  // mirrored pair: both move
-  const m = suggestPosition(fit, sc, 25, 3, cur, "mirror");
-  expect(m.scoops.filter((p) => sc.some((q) => q[0] === p[0] && q[1] === p[1])).length)
-    .toBe(0);
+  // mirrored pair: a same-height pair here sits on the short ends
+  expect(suggestPosition(fit, sc, 25, 3, cur, "mirror")).toBeNull();
 });
 
 test("legacy 'scallop' params (PoC oracle, old STEP designs) still load", () => {

@@ -245,6 +245,7 @@
             evens out lighting artifacts on symmetric tools</li>
           <li>turn off for genuinely asymmetric ones</li>
         </ul></div>
+        <div id="sym-warn" class="errbox" role="alert" hidden></div>
       </div>
       <div class="optrow">
         <div class="choicehead">pocket depth</div>
@@ -486,6 +487,9 @@
         <button class="pv" data-view="bottom">bottom</button>
         <label class="pv edgetog"><input type="checkbox" id="opt-edges"
           checked> edges</label>
+        <label class="pv edgetog" title="show the negative body (the pocket
+          cutout the negative STEP holds) inside a see-through bin"><input
+          type="checkbox" id="opt-neg"> negative</label>
         <button type="button" class="pv" id="rev-place" aria-pressed="false"
           title="click a foot in the bottom view to put the rev there">Place
           rev</button>

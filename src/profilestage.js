@@ -706,7 +706,7 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     L.nz = pick.nz; L.H = pick.H; L.depth = pick.depth;
     roundOut = { mode: pick.mode, a: pick.a, axisZ: pick.axisZ, r,
       rTool: meridianR(meridian(cMm)), mer, options,
-      scoops: scoopD > 0 ? scoops : [], scoopR: scoopD / 2 };
+      scoops: scoopD > 0 ? scoops : [], scoopR: scoopD / 2, blend: scoopBlend };
     log(`round tool: cradle r ${r.toFixed(2)} mm, axis ${pick.mode} ` +
       `(${pick.a.toFixed(1)} mm below the top), ${pick.nz}u`);
   }

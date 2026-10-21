@@ -62,9 +62,22 @@ export function suggestPosition(fit, scoops, d, minWall, cur, mode = "mirror",
   const linked = mode === "mirror" && scoops.length > 1;
   const stride = Math.max(1, Math.floor(fit.length / samples));
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  // never onto a short edge (owner, 2026-10-21): every moved scoop must
+  // lie wholly between the ends of the tool's longer dimension, i.e. on a
+  // long side
+  const e = pocketExtent(fit, [], 0);
+  const k = e.y1 - e.y0 >= e.x1 - e.x0 ? 1 : 0;
+  const [lo, hi] = k ? [e.y0, e.y1] : [e.x0, e.x1];
+  const onSide = (s) => s[k] - d / 2 >= lo && s[k] + d / 2 <= hi;
+  const mid = k ? (e.x0 + e.x1) / 2 : (e.y0 + e.y1) / 2; // splits the sides
   let best = null;
   const consider = (cand, move) => {
     if (best && move >= best.move) return;
+    if (!cand.every((s) => scoops.some((q) => q === s) || onSide(s))) return;
+    // nor onto another scoop on the same side (a pair across a narrow
+    // tool may overlap; one stacked on the other is no use)
+    if (cand.some((s, i) => cand.some((t, j) => j > i && dist(s, t) < d &&
+        (s[1 - k] > mid) === (t[1 - k] > mid)))) return;
     const u = binUnits(pocketExtent(fit, cand, d), minWall, MARGIN);
     if (smaller(u, cur)) best = { scoops: cand, move, ...u };
   };

@@ -59,27 +59,18 @@ export function findPose(c, mask, log = () => {}) {
     const row = y * W;
     for (let x = 0; x < W; x++) if (d[row + x]) { sx += x; sy += y; n++; }
   }
-  const cx = sx / n, cy = sy / n;
+  let cx = sx / n, cy = sy / n;
 
-  const sm = new c.Mat();
-  c.resize(mask, sm, new c.Size(0, 0), 0.25, 0.25, c.INTER_NEAREST);
-  const scx = cx * 0.25, scy = cy * 0.25;
-  const coarse = argmaxBy(arange(-20, 20.01, 1.0), (a) => mirrorIou(c, sm, scx, scy, a));
-  const mid = argmaxBy(arange(coarse - 1.5, coarse + 1.51, 0.25),
-    (a) => mirrorIou(c, sm, scx, scy, a));
-  sm.delete();
-  const fine = argmaxBy(arange(mid - 0.25, mid + 0.251, 0.05),
-    (a) => mirrorIou(c, mask, cx, cy, a));
-  const iou = mirrorIou(c, mask, cx, cy, fine);
-
-  // PCA cross-check (np.cov with N-1 divisor; 2x2 analytic eigenvector)
-  let sxx = 0, sxy = 0, syy = 0;
+  // PCA: the long axis seeds the search and cross-checks the result
+  // (np.cov with N-1 divisor; 2x2 analytic eigenvector)
+  let sxx = 0, sxy = 0, syy = 0, rMax = 0;
   for (let y = 0; y < H; y++) {
     const row = y * W;
     for (let x = 0; x < W; x++) {
       if (!d[row + x]) continue;
       const dx = x - cx, dy = y - cy;
       sxx += dx * dx; sxy += dx * dy; syy += dy * dy;
+      rMax = Math.max(rMax, dx * dx + dy * dy);
     }
   }
   const a = sxx / (n - 1), b = sxy / (n - 1), c2 = syy / (n - 1);
@@ -88,6 +79,55 @@ export function findPose(c, mask, log = () => {}) {
   if (b === 0) { [vx, vy] = a >= c2 ? [1, 0] : [0, 1]; }
   else { vx = b; vy = lMax - a; }
   const pcaDeg = (Math.atan2(vx, vy) * 180) / Math.PI;
+
+  // A tool too long to lie straight goes on the diagonal (owner,
+  // 2026-10-21: snips at ~35 deg came out ~15 deg off). The reference
+  // searched only +-20 deg about vertical. That window is still searched
+  // first; windows centred on the rotation that stands the long axis up
+  // (rotating by t turns direction (sin p, cos p) to sin(p + t), so
+  // t = -p) and on that + 90 (a WIDE tool's symmetry axis crosses its
+  // long axis — the plain-paper scraper) join it when they fall outside
+  // it. The best coarse match wins; the reference window wins ties, so
+  // straight tools keep parity.
+  const pcaRot = mod(-pcaDeg + 90, 180) - 90;
+  const centres = [0];
+  for (const t of [pcaRot, mod(pcaRot, 180) - 90]) {
+    const r0 = Math.round(t);
+    if (Math.abs(r0) > 10 && !centres.includes(r0)) centres.push(r0);
+  }
+
+  // pad so the turned tool never runs off the canvas (a clipped end
+  // reads as asymmetry); only when it would, so straight tools' masks
+  // are untouched
+  const r = Math.ceil(Math.sqrt(rMax)) + 2;
+  const padX = Math.max(0, r - Math.floor(W / 2));
+  const padY = Math.max(0, r - Math.floor(Math.min(cy, H - 1 - cy)));
+  let m = mask;
+  if (padX || padY) {
+    m = new c.Mat();
+    c.copyMakeBorder(mask, m, padY, padY, padX, padX, c.BORDER_CONSTANT,
+      new c.Scalar(0, 0, 0, 0));
+    cx += padX; cy += padY;
+  }
+
+  const sm = new c.Mat();
+  c.resize(m, sm, new c.Size(0, 0), 0.25, 0.25, c.INTER_NEAREST);
+  const scx = cx * 0.25, scy = cy * 0.25;
+  let coarse = null, coarseIou = -1;
+  for (const c0 of centres) {
+    const f = (t) => mirrorIou(c, sm, scx, scy, t);
+    const a = argmaxBy(arange(c0 - 20, c0 + 20.01, 1.0), f);
+    const v = f(a);
+    if (v > coarseIou) { coarse = a; coarseIou = v; }
+  }
+  const mid = argmaxBy(arange(coarse - 1.5, coarse + 1.51, 0.25),
+    (t) => mirrorIou(c, sm, scx, scy, t));
+  sm.delete();
+  const fine = argmaxBy(arange(mid - 0.25, mid + 0.251, 0.05),
+    (t) => mirrorIou(c, m, cx, cy, t));
+  const iou = mirrorIou(c, m, cx, cy, fine);
+  if (m !== mask) { m.delete(); cx -= padX; cy -= padY; }
+
   const pcaDev = Math.min(
     Math.abs(mod(pcaDeg - fine + 90, 180) - 90),
     Math.abs(mod(pcaDeg + fine + 90, 180) - 90));

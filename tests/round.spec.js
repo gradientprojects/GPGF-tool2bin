@@ -29,6 +29,15 @@ test("round tool cradle: sub-flush / flush / proud, walls, scoops, negative", ()
     console.log(res.trim());
     expect(res).toContain("1/1 passed");
     expect(res).toContain("valid=True");
+    // the filleted, chamfered finger slot bin too
+    const res2 = execFileSync(path.join(POC, ".venv", "bin", "python"),
+      [path.join(POC, "tools/step_check.py"),
+       path.join(APP, "test-results", "round-scoops.step"),
+       "--expect", "41.5", "167.5", "35", "--tol", "0.05"],
+      { encoding: "utf8", cwd: POC, timeout: 120000 });
+    console.log(res2.trim());
+    expect(res2).toContain("1/1 passed");
+    expect(res2).toContain("valid=True");
   }
 });
 
