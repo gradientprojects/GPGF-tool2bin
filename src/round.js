@@ -9,7 +9,7 @@
 // Pure geometry, no imports: the CV worker (layout) and the CAD worker
 // (the solid) both use it.
 const MIN_FLOOR = 7.0; // same as profilestage.js / bin3d.js
-export const AXIS_MODES = ["proud", "flush", "sub"];
+export const AXIS_MODES = ["flush", "sub"];
 
 /** Half-width w(y) of the closed outline `pts` about x = 0 (the widest
  *  crossing at each height, so notches don't matter) as an open polyline
@@ -69,24 +69,22 @@ export function simplify(poly, tol = 0.03) {
   return poly.filter((_, i) => keep[i]);
 }
 
-/** The three axis choices for a cradle of radius r (incl. clearance).
- *  a = mm of the axis BELOW the bin top: sub > 0, flush 0, proud < 0.
- *  Bin height rounds up so the deepest point (a + r) keeps MIN_FLOOR.
- *  Defaults: sub a = r (the whole tool just under the top), proud
- *  a = -r/2. Proud is refused once the axis is r or more above the top
- *  (nothing left in the bin). `mm` = {proud, sub} as entered (null =
- *  default). */
-export function roundOptions(r, mm = {}) {
+/** The two axis choices for a cradle of radius r (incl. clearance)
+ *  (owner, 2026-10-21: never proud of the top, no typed depth):
+ *  a = mm of the axis BELOW the bin top. "flush": the axis level with the
+ *  top (half the tool in), "sub" (UI: Tool flush): a = r, the tool's top
+ *  level with the bin top. Bin height rounds up so the deepest point
+ *  (a + r) keeps MIN_FLOOR. Old designs: "proud" reads as "flush"; a
+ *  typed sub-flush depth is ignored (axisModeOf). */
+export function roundOptions(r) {
   const pick = (mode, a) => {
     const depth = a + r;
     const nz = Math.max(1, Math.ceil((depth + MIN_FLOOR) / 7.0 - 1e-9));
     const H = nz * 7.0;
-    const why = depth <= 0.5 ? "above" : null;
-    return { mode, a, nz, H, depth, axisZ: H - a, ok: why === null, why,
-             mm: Math.abs(a) };
+    return { mode, a, nz, H, depth, axisZ: H - a, ok: true, why: null };
   };
-  const sub = Number.isFinite(+mm.sub) && +mm.sub > 0 ? +mm.sub : r;
-  const proud = Number.isFinite(+mm.proud) && +mm.proud > 0 ? +mm.proud : r / 2;
-  return { sub: pick("sub", sub), flush: pick("flush", 0),
-           proud: pick("proud", -proud) };
+  return { sub: pick("sub", r), flush: pick("flush", 0) };
 }
+
+/** a saved axis_mode as one of AXIS_MODES (old "proud" -> "flush") */
+export const axisModeOf = (m) => m === "flush" || m === "proud" ? "flush" : "sub";

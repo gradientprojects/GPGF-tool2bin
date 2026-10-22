@@ -6,6 +6,7 @@ import {
 } from "./profilestage.js";
 import { R_TOP, FOOT_BOT } from "./bin3d.js";
 import { revCell } from "./puzzle.js";
+import { axisModeOf } from "./round.js";
 import { suggestSize, suggestPosition, D_MIN } from "./scoopfit.js";
 import {
   DRAG_R, dragContour, nearestIndex, snapAngle, applyToolDrags, segDist,
@@ -1178,8 +1179,7 @@ function currentParams() {
     min_wall: +sliders.wall.value,
     symmetric: optSymmetric.checked,
     // only when on, so a prism design's params are exactly as before
-    round: optRound.checked ? { on: true, axis_mode: axisMode,
-      proud_mm: axisMm.proud ?? undefined, sub_mm: axisMm.sub ?? undefined } : undefined,
+    round: optRound.checked ? { on: true, axis_mode: axisMode } : undefined,
     max_contour: optMax.checked,
     strict_contain: optStrict.checked,
     flat_faithful: optFlat.checked,
@@ -1414,47 +1414,29 @@ for (const [m, btn] of Object.entries(depthBtns)) {
   });
 }
 
-// round tool: where the centre line sits replaces Flush / Shorter bin.
-// a = mm of the axis below the top (round.js roundOptions); each of
-// proud / sub-flush remembers its own mm (null = its default).
+// round tool: where the centre line sits replaces Flush / Shorter bin
+// (owner, 2026-10-21: two choices, never proud, no typed depth):
+// "flush" = axis level with the top, "sub" = Tool flush (the tool's top
+// level with the bin's top).
 let axisMode = "sub";
-const axisMm = { proud: null, sub: null };
-const axisBtns = { proud: document.getElementById("axis-proud"),
-                   flush: document.getElementById("axis-flush"),
+const axisBtns = { flush: document.getElementById("axis-flush"),
                    sub: document.getElementById("axis-sub") };
-const axisRow = document.getElementById("axis-mm-row");
-const axisIn = document.getElementById("axis-mm");
 function showAxisChoice(rd) {
   document.getElementById("axis-choices").hidden = !rd;
   document.getElementById("depth-choices").hidden = !!rd;
-  axisRow.hidden = !rd || rd.mode === "flush";
   if (!rd) return;
-  const { proud, flush, sub } = rd.options;
+  const { flush, sub } = rd.options;
   const set = (btn, give, get) => {
     btn.querySelector(".give").textContent = give;
     btn.querySelector(".get").textContent = get;
   };
   const bin = (o) => `${o.H} mm bin (${o.nz}u)`;
-  const fullIn = Math.abs(sub.a - rd.r) < 0.05;
-  set(axisBtns.sub, fullIn ? "whole tool under the top"
-    : `centre line ${fmtMm(sub.mm)} mm below the top`, bin(sub));
+  set(axisBtns.sub, "whole tool under the top, its top level with it", bin(sub));
   set(axisBtns.flush, "centre line level with the top, half the tool in",
     bin(flush));
-  if (proud.ok) {
-    set(axisBtns.proud, `centre line ${fmtMm(proud.mm)} mm above the top`,
-      bin(proud));
-  } else {
-    set(axisBtns.proud, "not available", "the tool would barely sit in it");
-  }
-  axisBtns.proud.disabled = !proud.ok;
   for (const [m, btn] of Object.entries(axisBtns)) {
     btn.setAttribute("aria-checked", String(m === rd.mode));
   }
-  if (rd.mode !== "flush" && document.activeElement !== axisIn) {
-    axisIn.value = fmtMm(Math.abs(rd.a));
-  }
-  document.getElementById("axis-mm-dir").textContent =
-    rd.mode === "proud" ? "above the top" : "below the top";
 }
 for (const [m, btn] of Object.entries(axisBtns)) {
   btn.addEventListener("click", () => {
@@ -1463,14 +1445,6 @@ for (const [m, btn] of Object.entries(axisBtns)) {
     runProfile();
   });
 }
-axisIn.addEventListener("change", () => {
-  const v = Math.min(60, +axisIn.value);
-  // an unchanged value (a blur after the edit already applied) must not
-  // refit: that would disable Download right under the click
-  if (!(v > 0) || axisMode === "flush" || axisMm[axisMode] === v) return;
-  axisMm[axisMode] = v;
-  runProfile();
-});
 
 // bin shape: Full / Puzzle-piece (drop the cells the pocket doesn't
 // need). Offered only when that saves at least one cell (owner rule —
@@ -2222,9 +2196,7 @@ async function reviseFromStep(file) {
     // photo starts as a plain prism, like the depth choice)
     const rd = p.round && p.round.on ? p.round : null;
     optRound.checked = !!rd; shapeFlat.checked = !rd;
-    axisMode = rd && ["proud", "flush", "sub"].includes(rd.axis_mode) ? rd.axis_mode : "sub";
-    axisMm.proud = rd && +rd.proud_mm > 0 ? +rd.proud_mm : null;
-    axisMm.sub = rd && +rd.sub_mm > 0 ? +rd.sub_mm : null;
+    axisMode = rd ? axisModeOf(rd.axis_mode) : "sub"; // old "proud" -> flush
     applySettings(p);
     customScoops = Array.isArray(p.scoops) ? p.scoops : null;
     customStraights = Array.isArray(p.straights) ? p.straights : [];
@@ -2298,7 +2270,7 @@ function gatePhoto(file) {
   if (window.__contour && window.__contour.ok) {
     optRound.checked = false; shapeFlat.checked = true;
   }
-  axisMode = "sub"; axisMm.proud = axisMm.sub = null; lastRTool = null;
+  axisMode = "sub"; lastRTool = null;
   syncRound();
   scanGate.style.display = "block";
   gateUpdate();

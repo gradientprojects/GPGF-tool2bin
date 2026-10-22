@@ -27,7 +27,7 @@ import { resample, detectCorners, fitProfile, sampleSegs } from "./profilefit.js
 import { roundHalfEven, GridNN } from "./nummath.js";
 import { findContours } from "./marching.js";
 import { puzzleCells, puzzleOutline } from "./puzzle.js";
-import { meridian, meridianR, roundOptions, AXIS_MODES } from "./round.js";
+import { meridian, meridianR, roundOptions, axisModeOf } from "./round.js";
 
 export const GRID = 42.0;
 export const GAP = 0.5;
@@ -700,9 +700,8 @@ export function profileResponse(c, cMm, params, log = () => {}) {
     const bare = scoopD > 0 && scoops.length ? cutStage(false)[0].pts : pocketPts;
     const mer = meridian(bare);
     const r = meridianR(mer);
-    const options = roundOptions(r, { proud: round.proud_mm, sub: round.sub_mm });
-    const want = AXIS_MODES.includes(round.axis_mode) ? round.axis_mode : "sub";
-    const pick = options[want].ok ? options[want] : options.sub;
+    const options = roundOptions(r);
+    const pick = options[axisModeOf(round.axis_mode)];
     L.nz = pick.nz; L.H = pick.H; L.depth = pick.depth;
     roundOut = { mode: pick.mode, a: pick.a, axisZ: pick.axisZ, r,
       rTool: meridianR(meridian(cMm)), mer, options,

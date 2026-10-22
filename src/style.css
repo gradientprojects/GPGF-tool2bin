@@ -165,9 +165,6 @@ select, input[type=text], input[type=number] {
 .choices[hidden] { display:none; }
 /* round tool: three centre-line choices, + the mm for proud / sub-flush */
 #axis-choices { grid-template-columns:1fr 1fr 1fr; }
-.axismm { display:flex; align-items:center; gap:6px; margin-top:8px; font-size:14px; }
-.axismm[hidden] { display:none; }
-.axismm input { width:5em; }
 @media (max-width: 420px) { .choices, #axis-choices { grid-template-columns:1fr; } }
 
 /* scoop suggestions: only shown when verified to save a grid unit */

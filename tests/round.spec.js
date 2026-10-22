@@ -12,34 +12,29 @@ const POC = process.env.TOOL2BIN_POC ||
 const PHOTO = path.join(import.meta.dirname, "fixtures", "photos",
   "round-screwdriver.jpg");
 
-test("round tool cradle: sub-flush / flush / proud, walls, scoops, negative", () => {
-  test.setTimeout(400000);
-  const out = execFileSync("bash",
-    [path.join(APP, "tests/run_cjs.sh"), path.join(APP, "tests/round.cjs")],
-    { encoding: "utf8", timeout: 380000 });
-  console.log(out.split("\n").filter((l) => /^(ok|FAIL|ROUND)/.test(l)).join("\n"));
-  expect(out).toContain("ROUND OK");
-  // local-only: re-import the cradle bin with the reference kernel
-  if (fs.existsSync(path.join(POC, "_ORACLE"))) {
-    const res = execFileSync(path.join(POC, ".venv", "bin", "python"),
-      [path.join(POC, "tools/step_check.py"),
-       path.join(APP, "test-results", "round.step"),
-       "--expect", "41.5", "167.5", "35", "--tol", "0.05"],
-      { encoding: "utf8", cwd: POC, timeout: 120000 });
-    console.log(res.trim());
-    expect(res).toContain("1/1 passed");
-    expect(res).toContain("valid=True");
-    // the filleted, chamfered finger slot bin too
-    const res2 = execFileSync(path.join(POC, ".venv", "bin", "python"),
-      [path.join(POC, "tools/step_check.py"),
-       path.join(APP, "test-results", "round-scoops.step"),
-       "--expect", "41.5", "167.5", "35", "--tol", "0.05"],
-      { encoding: "utf8", cwd: POC, timeout: 120000 });
-    console.log(res2.trim());
-    expect(res2).toContain("1/1 passed");
-    expect(res2).toContain("valid=True");
-  }
-});
+for (const mode of ["sub", "flush"]) {
+  test(`round tool cradle (${mode === "sub" ? "tool" : "axis"} flush): walls, scoops, fillets, rim, negative`, () => {
+    test.setTimeout(560000);
+    const out = execFileSync("bash",
+      [path.join(APP, "tests/run_cjs.sh"), path.join(APP, "tests/round.cjs"), mode],
+      { encoding: "utf8", timeout: 540000 });
+    console.log(out.split("\n").filter((l) => /^(ok|FAIL|ROUND)/.test(l)).join("\n"));
+    expect(out).toContain("ROUND OK");
+    // local-only: re-import the bins (written by the Tool flush half)
+    // with the reference kernel
+    if (mode === "sub" && fs.existsSync(path.join(POC, "_ORACLE"))) {
+      for (const f of ["round.step", "round-scoops.step"]) {
+        const res = execFileSync(path.join(POC, ".venv", "bin", "python"),
+          [path.join(POC, "tools/step_check.py"), path.join(APP, "test-results", f),
+           "--expect", "41.5", "167.5", "35", "--tol", "0.05"],
+          { encoding: "utf8", cwd: POC, timeout: 120000 });
+        console.log(res.trim());
+        expect(res).toContain("1/1 passed");
+        expect(res).toContain("valid=True");
+      }
+    }
+  });
+}
 
 const settled = (page) => expect.poll(() => page.evaluate(() =>
   window.__profile && window.__profile.ok &&
@@ -61,8 +56,8 @@ test("round tool UI: cradle cards, build, STEP round trip, negative", async ({ p
   await expect(page.locator("#depth-choices")).toBeVisible();
   await expect(page.locator("#axis-choices")).toBeHidden();
 
-  // round on: symmetric locked on, the three centre-line cards replace
-  // Flush / Shorter, default sub-flush with the whole tool under the top
+  // round on: symmetric locked on, the two centre-line cards replace
+  // Flush / Shorter, default Tool flush with the whole tool under the top
   await page.check("#opt-symmetric");
   await page.check("#opt-round");
   await expect(page.locator("#opt-symmetric")).toBeDisabled();
@@ -80,7 +75,10 @@ test("round tool UI: cradle cards, build, STEP round trip, negative", async ({ p
   expect(s.r).toBeLessThan(rTool + 2.5);
   expect(s.a).toBeCloseTo(s.r, 6);
   expect(s.nz).toBe(Math.ceil((2 * s.r + 7) / 7));
-  await expect(page.locator("#axis-sub .give")).toHaveText("whole tool under the top");
+  await expect(page.locator("#axis-sub .give")).toHaveText("whole tool under the top, its top level with it");
+  // never proud, no typed depth (owner, 2026-10-21)
+  await expect(page.locator("#axis-proud")).toHaveCount(0);
+  await expect(page.locator("#axis-mm")).toHaveCount(0);
   await expect(page.locator("#bin-stale")).toBeVisible(); // no auto regen
   await page.click("#rebuild-3d");
   await expect.poll(() => page.evaluate(() => window.__bin && window.__bin.ok &&
@@ -94,16 +92,6 @@ test("round tool UI: cradle cards, build, STEP round trip, negative", async ({ p
   s = await rd(page);
   expect(s.a).toBe(0);
   expect(s.nz).toBe(Math.ceil((s.r + 7) / 7));
-  await expect(page.locator("#axis-mm-row")).toBeHidden();
-
-  // proud, 4 mm above the top
-  await page.click("#axis-proud");
-  await expect.poll(async () => (await rd(page)).mode).toBe("proud");
-  await expect(page.locator("#axis-mm-row")).toBeVisible();
-  await page.fill("#axis-mm", "4");
-  await page.locator("#axis-mm").dispatchEvent("change");
-  await expect.poll(async () => (await rd(page)).a).toBe(-4);
-  await expect(page.locator("#axis-proud .give")).toHaveText("centre line 4 mm above the top");
   await settled(page);
 
   // export (rebuilds first) + the negative; revise restores it all
@@ -120,6 +108,6 @@ test("round tool UI: cradle cards, build, STEP round trip, negative", async ({ p
   await page.setInputFiles("#photo", saved);
   await settled(page);
   await expect(page.locator("#opt-round")).toBeChecked();
-  await expect(page.locator("#axis-proud")).toHaveAttribute("aria-checked", "true");
-  expect((await rd(page)).a).toBe(-4);
+  await expect(page.locator("#axis-flush")).toHaveAttribute("aria-checked", "true");
+  expect((await rd(page)).a).toBe(0);
 });
