@@ -19,8 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     # hard caps so a wedged runner fails fast instead of hanging for
     # half an hour (2026-10-07: playwright install sat 34 min on a
-    # stuck download before being cancelled by hand)
-    timeout-minutes: 20
+    # stuck download before being cancelled by hand). The suite itself
+    # grew past 15 min with the round-tool geometry gates (2026-10-23)
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -43,7 +44,7 @@ jobs:
       - run: npm run build
         timeout-minutes: 5
       - run: npm test
-        timeout-minutes: 15
+        timeout-minutes: 30
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
