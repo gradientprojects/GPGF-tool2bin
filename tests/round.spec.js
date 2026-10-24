@@ -14,10 +14,11 @@ const PHOTO = path.join(import.meta.dirname, "fixtures", "photos",
 
 for (const mode of ["sub", "flush"]) {
   test(`round tool cradle (${mode === "sub" ? "tool" : "axis"} flush): walls, scoops, fillets, rim, negative`, () => {
-    test.setTimeout(560000);
+    // ~3 min a half locally; a shared 2-worker CI runner took > 9 min
+    test.setTimeout(920000);
     const out = execFileSync("bash",
       [path.join(APP, "tests/run_cjs.sh"), path.join(APP, "tests/round.cjs"), mode],
-      { encoding: "utf8", timeout: 540000 });
+      { encoding: "utf8", timeout: 900000 });
     console.log(out.split("\n").filter((l) => /^(ok|FAIL|ROUND)/.test(l)).join("\n"));
     expect(out).toContain("ROUND OK");
     // local-only: re-import the bins (written by the Tool flush half)

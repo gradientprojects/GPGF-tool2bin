@@ -21,7 +21,7 @@ jobs:
     # half an hour (2026-10-07: playwright install sat 34 min on a
     # stuck download before being cancelled by hand). The suite itself
     # grew past 15 min with the round-tool geometry gates (2026-10-23)
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -44,7 +44,7 @@ jobs:
       - run: npm run build
         timeout-minutes: 5
       - run: npm test
-        timeout-minutes: 30
+        timeout-minutes: 40
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

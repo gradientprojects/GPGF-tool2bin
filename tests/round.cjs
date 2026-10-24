@@ -17,12 +17,13 @@ const APP = process.cwd();
 const ONLY = process.argv.find((a) => a === "sub" || a === "flush");
 const MODES = ONLY ? [ONLY] : ["sub", "flush"];
 
+const T0 = Date.now();
 function assert(cond, msg) {
   if (!cond) {
     console.log("FAIL " + msg);
     process.exit(1);
   }
-  console.log("ok   " + msg);
+  console.log(`ok   ${msg}  [${((Date.now() - T0) / 1000).toFixed(0)} s]`);
 }
 
 /** closed outline: shaft r 5 (y -60…10, pointed tip), handle r 12.5
