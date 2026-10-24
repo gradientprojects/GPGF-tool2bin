@@ -1,10 +1,12 @@
-// Round-tool cradle geometry gate (no oracle needed): a synthetic
-// screwdriver outline (Ø10 shaft, Ø25 handle) built as a revolved cradle
-// with the axis Tool flush ("sub") and flush (owner 2026-10-21: never
-// proud); asserts validity, cradle depth, straight walls above the axis,
-// the 7 mm floor, the negative body, and the finger slots' fillets and
-// rim chamfer — all the way round the rim, so nothing stands up at the
-// junctions. Run from app/ via tests/run_cjs.sh.
+// Round-tool pocket geometry gate (no oracle needed): a synthetic
+// screwdriver outline (Ø10 shaft, Ø25 handle) built as the one-surface
+// pocket (roundsurf.js) with the axis Tool flush ("sub") and flush (owner
+// 2026-10-21: never proud); asserts validity, cradle depth, straight walls
+// above the axis, the 7 mm floor, the negative body, the finger slots'
+// floors at the TOOL's bottom (owner 2026-10-23), the surface's quality
+// checks (no folds, seams, footprint), a skipped-scoop notice, and the rim
+// chamfer all the way round, so nothing stands up at the junctions. Run
+// from app/ via tests/run_cjs.sh.
 const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
@@ -50,6 +52,7 @@ async function main() {
   const bin3d = await import(pathToFileURL(path.join(APP, "src/bin3d.js")));
   const round = await import(pathToFileURL(path.join(APP, "src/round.js")));
   const sp = await import(pathToFileURL(path.join(APP, "src/smoothprof.js")));
+  const rs = await import(pathToFileURL(path.join(APP, "src/roundsurf.js")));
 
   // material top of `shape` along the vertical line at (x, y): the
   // shape cut down to a 0.1 mm column, its bbox (-Infinity = none)
@@ -70,6 +73,39 @@ async function main() {
       console.log(`probe threw at (${x.toFixed(2)}, ${y.toFixed(2)}): ${e}`);
       return NaN;
     }
+  };
+  // the same top from a fine mesh (0.02 mm): the highest triangle the
+  // vertical line at (x, y) passes through. The rim ring needs ~250
+  // probes per case and a Boolean probe on the one-surface pocket takes
+  // ~1 s; the ring's faces (top, chamfer, walls) are flat or ruled.
+  const meshTopper = (shape) => {
+    const m = bin3d.tessellate(oc, shape, 0.02, 0.1), P = m.positions, I = m.indices;
+    const G = 2, grid = new Map(), key = (i, j) => i * 100003 + j;
+    for (let t = 0; t < I.length; t += 3) {
+      const xs = [P[3 * I[t]], P[3 * I[t + 1]], P[3 * I[t + 2]]];
+      const ys = [P[3 * I[t] + 1], P[3 * I[t + 1] + 1], P[3 * I[t + 2] + 1]];
+      for (let i = Math.floor(Math.min(...xs) / G); i <= Math.floor(Math.max(...xs) / G); i++) {
+        for (let j = Math.floor(Math.min(...ys) / G); j <= Math.floor(Math.max(...ys) / G); j++) {
+          const k = key(i, j);
+          if (!grid.has(k)) grid.set(k, []);
+          grid.get(k).push(t);
+        }
+      }
+    }
+    return (x, y) => {
+      let best = -Infinity;
+      for (const t of grid.get(key(Math.floor(x / G), Math.floor(y / G))) || []) {
+        const a = 3 * I[t], b = 3 * I[t + 1], c = 3 * I[t + 2];
+        const d = (P[b + 1] - P[c + 1]) * (P[a] - P[c]) + (P[c] - P[b]) * (P[a + 1] - P[c + 1]);
+        if (Math.abs(d) < 1e-14) continue;
+        const l1 = ((P[b + 1] - P[c + 1]) * (x - P[c]) + (P[c] - P[b]) * (y - P[c + 1])) / d;
+        const l2 = ((P[c + 1] - P[a + 1]) * (x - P[c]) + (P[a] - P[c]) * (y - P[c + 1])) / d;
+        const l3 = 1 - l1 - l2;
+        if (l1 < -1e-9 || l2 < -1e-9 || l3 < -1e-9) continue;
+        best = Math.max(best, l1 * P[a + 2] + l2 * P[b + 2] + l3 * P[c + 2]);
+      }
+      return best;
+    };
   };
   const pts = screwdriver();
   const tck = sp.periodicFit(pts, 1e-9, 2.0);
@@ -133,7 +169,7 @@ async function main() {
     const withS = mk([[-12.45, 42], [12.5, 42.02]]), noS = mk([]);
     const a1 = top(withS, 0, -20), a0 = top(noS, 0, -20);
     assert(Math.abs(a1 - a0) < 0.01, `${mode}: scoops leave the shaft cradle alone (${a1.toFixed(2)} = ${a0.toFixed(2)})`);
-    const want = o.H - o.depth + 0.5;
+    const want = o.H - o.depth; // the tool's bottom, no lift
     for (const x of [12.5, 0, -6]) { // at the scoop, under the axis, across
       const zs = top(withS, x, 42);
       // nothing stands above the slot floor (the cradle may dip deeper)
@@ -152,7 +188,7 @@ async function main() {
     assert(bin3d.isValid(oc, shape), "scoops: solid valid");
     // inside the outline near its edge (the synthetic outline has no
     // scoop lobes): the cradle alone would leave z ~ 16.6 here
-    const zs = top(shape, 11, 42), floorZ = H - o.depth + 0.5; // SCOOP_LIFT
+    const zs = top(shape, 11, 42), floorZ = H - o.depth; // the tool's bottom
     assert(Math.abs(zs - floorZ) < 0.05,
       `scoops: full depth beside the handle (z ${zs.toFixed(2)} ~ ${floorZ.toFixed(2)})`);
     // the preview mesher choked on a scoop floor tangent to the cradle
@@ -187,7 +223,17 @@ async function main() {
         assert(bin3d.isValid(oc, shape) && !logs.some((l) => /WARNING/.test(l)),
           `${tag}: valid, slots ${plan.slots.map((s) => s.mode).join("/")} — ` +
           logs.filter((l) => /slot|entry/.test(l)).join(" | "));
-        assert(plan.slots.every((s) => s.mode !== "full"), `${tag}: every slot filleted into the plan`);
+        assert(plan.slots.every((s) => s.mode === "plan") && !plan.skipped.length,
+          `${tag}: every slot filleted into the plan`);
+        // the one surface: smooth, no folds, inside the plan, floor at the
+        // tool's bottom (never above it; on the wide side no deeper than
+        // 0.05 mm under it), every pole section running one way
+        const b = rs.roundPocket(oc, plan, rnd, H + 1, { debug: true });
+        const q = rs.roundPocketChecks(oc, b);
+        assert(q.folds === 0 && q.outside === 0 && q.crossed === 0 && q.seamU < 0.1 && q.seamV < 0.1 &&
+          q.floorAbove >= -0.001 && q.wideBelow <= 0.05 && q.stripRatio < 100,
+          `${tag}: surface ${JSON.stringify(Object.fromEntries(Object.entries(q).map(([k, v]) => [k, +(+v).toPrecision(3)])))}`);
+        b.solid.delete();
         const mesh = bin3d.tessellate(oc, shape);
         let zMax = -Infinity;
         for (let i = 2; i < mesh.positions.length; i += 3) zMax = Math.max(zMax, mesh.positions[i]);
@@ -198,13 +244,12 @@ async function main() {
         }
         // the ring: U sampled, outward normals (CCW: (dy, -dx))
         const poly = bin3d.planPoly(plan.chain);
+        const mtop = meshTopper(shape);
         const near = (p) => c.scoops.some(([, sy]) => Math.abs(p[1] - sy) < c.R + c.blend + 4);
-        // just inside U: open to the axis (walls), or round a slot down
-        // to its floor (no step under a fillet, at the axis or the rim)
-        const floorZ = H - o.depth + 0.5;
-        const inSlot = (p) => plan.slots.some((sl) => sl.run &&
-          p[1] > sl.run.bot.T[1] - 0.1 && p[1] < sl.run.top.T[1] + 0.1);
-        const inZOf = (p) => inSlot(p) ? floorZ : mode === "sub" ? o.axisZ : H - 1;
+        // just inside U: open down past the axis (walls), or past the
+        // flare's floor at an axis-flush rim; the slot floors themselves
+        // are checked on the surface above
+        const inZOf = () => mode === "sub" ? o.axisZ : H - 1;
         let n = 0, worst = { d: 0 };
         let acc = 0;
         for (let i = 0; i < poly.length; i++) {
@@ -217,7 +262,7 @@ async function main() {
           if (Math.abs(a[0]) < 2.5) continue; // the pointed ends: capped miter
           const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L;
           const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-          const at = (d) => top(shape, m[0] + nx * d, m[1] + ny * d);
+          const at = (d) => mtop(m[0] + nx * d, m[1] + ny * d);
           const zi = at(-0.3), zc = at(0.5), zo = at(2);
           const wantC = edgeStyle === "fillet" ? H - 0.134 : H - 0.5;
           const inZ = inZOf(m);
@@ -231,6 +276,21 @@ async function main() {
     }
   }
   console.log(`slot cases: ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+
+  // a scoop inside the tool's outline can't widen the pocket: left out,
+  // with a notice (owner, 2026-10-23), the bin still builds
+  if (MODES.includes("sub")) {
+    const o = opts.sub;
+    const rnd = { mer, axisZ: o.axisZ, a: o.a, scoops: [[-3, 42], [3, 42]], scoopR: 4, blend: 4 };
+    const plan = bin3d.roundPlan(rnd, 1.0);
+    const res = bin3d.buildBin(oc, [tck], true, 1, 4, o.nz, o.depth, {
+      center, pocketPts: pts, log: () => {}, round: rnd });
+    assert(plan.skipped.length >= 1 && plan.skipped.every((k) => k.why === "inside") &&
+      res.notices.length === 1 && bin3d.isValid(oc, res.shape),
+      `inside scoop: skipped ${JSON.stringify(plan.skipped)}, notice "${res.notices[0]}"`);
+    const zc = top(res.shape, 0, 42);
+    assert(Math.abs(zc - (o.axisZ - r)) < 0.05, `inside scoop: plain cradle there (z ${zc.toFixed(2)})`);
+  }
   console.log("ROUND OK");
 }
 main();

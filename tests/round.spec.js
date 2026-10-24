@@ -85,6 +85,11 @@ test("round tool UI: cradle cards, build, STEP round trip, negative", async ({ p
     (window.__bin.logs || []).some((l) => l.startsWith("round tool: cradle"))),
     { timeout: 240000 }).toBe(true);
   expect(await page.evaluate(() => window.__bin.H)).toBe(s.nz * 7);
+  // a skipped finger scoop shows under the scoop controls; this tool's
+  // scoops all fit, so the box stays hidden (round.cjs builds the skip)
+  const notices = await page.evaluate(() => window.__bin.notices);
+  expect(notices).toEqual([]);
+  await expect(page.locator("#scoop-notice")).toBeHidden();
 
   // axis flush: half the tool in
   await page.click("#axis-flush");

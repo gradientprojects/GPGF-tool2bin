@@ -13,6 +13,7 @@
 import { periodicFit } from "./smoothprof.js";
 import { puzzleOutline } from "./puzzle.js";
 import { meridianR } from "./round.js";
+import { roundPocket } from "./roundsurf.js";
 
 export const GRID = 42.0;
 export const GAP = 0.5;
@@ -446,23 +447,10 @@ function pocketEntryCutter(oc, segs, periodic, pocketPts, size, H, style, log) {
   return s;
 }
 
-/** Round-tool cavity (owner, 2026-10-13; round.js). The meridian (open
- *  [x, y] polyline, both ends on x = 0) laid at z = axisZ as straight
- *  edges, closed along the axis, and REVOLVED 180° about the Y
- *  axis through (0, ·, axisZ), downward: the cradle under the axis. With
- *  `top` (axis at or under the rim) the revolve's own start and end faces
- *  — the outline at the axis, both halves — are extruded straight up to
- *  `top` and fused on: one exact shared face/edge where the walls meet
- *  the cradle (a separately built outline prism only touched it
- *  tangentially along a slightly different curve, and the cut came out
- *  invalid). Revolve a profile, never loft circles (2026-10-04: circle
- *  lofts give seams Bambu/Onshape can't sew). */
-/** the cradle's meridian as lines + arcs (`fitProfile`): each line
- *  revolves into an exact cone / cylinder, each arc into a torus or
- *  sphere — a few faces where straight runs gave dozens (owner, Onshape
- *  2026-10-21: the rounded handle end came in as a stack of split
- *  faces). Elements run up the +x side from the bottom tip to the top
- *  tip, both exactly ON the axis. Cached per meridian. */
+/** the cradle's meridian as lines + arcs (`fitProfile`; owner, Onshape
+ *  2026-10-21: straight runs came in as a stack of split faces).
+ *  Elements run up the +x side from the bottom tip to the top tip, both
+ *  exactly ON the axis. Cached per meridian. */
 const profileCache = new WeakMap();
 function cradleProfile(mer) {
   let els = profileCache.get(mer);
@@ -473,23 +461,6 @@ function cradleProfile(mer) {
   return els;
 }
 
-export function cradle(oc, mer, axisZ, top = null) {
-  // the profile closed along the axis (its top tip back to its bottom tip)
-  const els = cradleProfile(mer);
-  const w = chainWire(oc, [...els, lineEl(els[els.length - 1].b, els[0].a)], 0, axisZ);
-  const ax = new oc.gp_Ax1_2(new oc.gp_Pnt_3(0, 0, axisZ), new oc.gp_Dir_4(0, 1, 0));
-  // +π about +Y takes x > 0 to z < 0: the lower half
-  const mr = new oc.BRepPrimAPI_MakeRevol_1(faceFromWire(oc, w), ax, Math.PI, false);
-  let s = mr.Shape();
-  if (top !== null && top > axisZ) {
-    for (const f of [mr.FirstShape_1(), mr.LastShape_1()]) {
-      s = fuse(oc, s, prism(oc, f, top - axisZ));
-    }
-  }
-  mr.delete();
-  return s;
-}
-
 /** the cradle's plan outline at the axis (= the straight walls above it):
  *  the profile up the +x side, mirrored back down the -x side (CCW) */
 export function cradlePlan(mer) {
@@ -497,42 +468,13 @@ export function cradlePlan(mer) {
   return [...right, ...mirrorChain(right)];
 }
 
-/** A finger slot across a round tool (owner, 2026-10-13: "cut all the
- *  way across"): the stadium joining the scoop disc at (±hs, cy), radius
- *  R, as ONE prism (arcs + lines — no tangent box/cylinder pair) from z0
- *  up `h`. hs ~ 0 (a scoop on the axis): just its disc. */
-function scoopSlot(oc, hs, cy, R, z0, h) {
-  if (hs < 1e-6) return cylinder(oc, 0, cy, z0, R, h);
-  const line = (a, b) => {
-    const me = new oc.BRepBuilderAPI_MakeEdge_3(new oc.gp_Pnt_3(...a), new oc.gp_Pnt_3(...b));
-    const e = me.Edge();
-    me.delete();
-    return e;
-  };
-  const mw = new oc.BRepBuilderAPI_MakeWire_1();
-  mw.Add_1(arcEdge(oc, [hs, cy - R, z0], [hs + R, cy, z0], [hs, cy + R, z0]));
-  mw.Add_1(line([hs, cy + R, z0], [-hs, cy + R, z0]));
-  mw.Add_1(arcEdge(oc, [-hs, cy + R, z0], [-hs - R, cy, z0], [-hs, cy - R, z0]));
-  mw.Add_1(line([-hs, cy - R, z0], [hs, cy - R, z0]));
-  if (!mw.IsDone()) throw new Error("round tool: finger slot wire not closed");
-  const w = mw.Wire();
-  mw.delete();
-  return prism(oc, faceFromWire(oc, w), h);
-}
-
-// ---- the round pocket above the axis (owner, 2026-10-21) ----
+// ---- the round pocket's plan (owner, 2026-10-21; built 2026-10-23) ----
 // The axis is never above the top (Axis flush / Tool flush), so the rim
-// opening is always the cradle's plan with straight walls up from the
-// axis. Below the axis: the half-revolved cradle. Above it: ONE prism of
-// the plan outline U = the cradle's faceted plan P ∪ the finger slots'
+// opening is the plan outline U = the cradle's plan P + the finger slots'
 // stadiums, every junction filleted in 2D (scoop_blend, as flat mode
-// does), from the axis plane up through the rim — P's part of its
-// bottom face is exactly the revolve's end faces, the shared face that
-// worked before. ONE rim flare is lofted from U. The first fix built a
-// separate filleted slot cutter with its own flare per slot: the slot
-// and cradle flares crossed at every fillet and left spikes standing at
-// the rim (owner screenshot). Below the axis each slot stays the plain
-// stadium crossing the cradle (live since 2026-10-13).
+// does), G1 everywhere. The pocket itself is ONE surface below the axis
+// with walls of U above it (roundsurf.js); ONE rim flare is lofted from
+// U (per-slot flares crossed and left spikes, owner screenshot).
 const v2 = {
   sub: (a, b) => [a[0] - b[0], a[1] - b[1]],
   add: (a, b) => [a[0] + b[0], a[1] + b[1]],
@@ -708,7 +650,85 @@ export function fitProfile(mer, tol = 0.03) {
     els.push(best.e);
     i = best.j;
   }
+  centreEnds(els);
   return els;
+}
+
+/** An outline symmetric about x = 0 must cross it square, so an END arc
+ *  gets its centre on the axis (2026-10-23: a fitted end arc 0.76 mm off
+ *  ran 0.11 mm back below its tip, and the round pocket's surface folded
+ *  there). Keep the joint (and its tangent) if that moves the tip OUTWARD;
+ *  else keep the tip and make the arc tangent to its neighbour, whose end
+ *  moves to the new tangent point. Pointed (line) ends stay. In place. */
+function centreEnds(els) {
+  const keepJoint = (e, top) => {
+    const J = top ? e.a : e.b, n = v2.mul(v2.sub(e.c, J), 1 / e.r);
+    if (Math.abs(n[0]) < 1e-12) return null;
+    const t = -J[0] / n[0];
+    if (!(t > 0)) return null;
+    const c = [0, J[1] + t * n[1]], tip = [0, c[1] + (top ? t : -t)], old = top ? e.b : e.a;
+    if (top ? tip[1] < old[1] : tip[1] > old[1]) return null; // would move inward
+    return top ? endArc(J, tip, c) : endArc(tip, J, c);
+  };
+  const keepTip = (e, nb, top) => {
+    const T = top ? e.b : e.a, sg = top ? 1 : -1;
+    const cOf = (r) => [0, T[1] - sg * r];
+    // the tangent point on the neighbour (arc: same-side tangency
+    // |c - P| = |R - r|; line: the foot of the perpendicular)
+    const touch = (r) => {
+      const c = cOf(r);
+      if (nb.type === "line") {
+        const d = v2.unit(v2.sub(nb.b, nb.a)), q = v2.sub(c, nb.a);
+        const foot = v2.add(nb.a, v2.mul(d, q[0] * d[0] + q[1] * d[1]));
+        return { f: v2.len(v2.sub(c, foot)) - r, J: foot };
+      }
+      const dc = v2.sub(c, nb.c), L = v2.len(dc);
+      return { f: L - Math.abs(nb.r - r), J: v2.add(nb.c, v2.mul(dc, (r > nb.r ? -nb.r : nb.r) / L)) };
+    };
+    const old = top ? e.a : e.b, rMax = 20 * Math.max(e.r, nb.type === "arc" ? nb.r : e.r);
+    let best = null;
+    for (let k = 1, N = 4000; k < N; k++) {
+      let lo = (rMax * k) / N, hi = (rMax * (k + 1)) / N;
+      if (touch(lo).f * touch(hi).f > 0) continue;
+      for (let it = 0; it < 100; it++) {
+        const m = (lo + hi) / 2;
+        if (touch(m).f * touch(lo).f > 0) lo = m; else hi = m;
+      }
+      const r = (lo + hi) / 2, { f, J } = touch(r), d = v2.len(v2.sub(J, old));
+      if (Math.abs(f) < 1e-6 && (!best || d < best.d)) best = { r, J, d };
+    }
+    if (!best) return null;
+    // on the neighbour's own circle / line, near the old joint (the
+    // neighbour may get a little shorter OR longer)
+    const nbLen = nb.type === "line" ? v2.len(v2.sub(nb.b, nb.a)) : Math.abs(nb.sw) * nb.r;
+    if (best.d > 0.3 * nbLen) return null;
+    const c = cOf(best.r);
+    return top
+      ? { end: endArc(best.J, T, c), nb: elTo(nb, nb.a, best.J) }
+      : { end: endArc(T, best.J, c), nb: elTo(nb, best.J, nb.b) };
+  };
+  for (const top of [false, true]) {
+    const i = top ? els.length - 1 : 0, j = top ? i - 1 : 1;
+    const e = els[i];
+    if (e.type !== "arc" || Math.abs(e.c[0]) < 1e-9 || j < 0 || j >= els.length) continue;
+    const kj = keepJoint(e, top);
+    if (kj) { els[i] = kj; continue; }
+    const kt = keepTip(e, els[j], top);
+    if (kt) { els[i] = kt.end; els[j] = kt.nb; }
+  }
+}
+
+/** e's own line / circle, from exactly a to exactly b (both on it) */
+function elTo(e, a, b) {
+  if (e.type === "line") return lineEl(a, b);
+  const ta = elNear(a, e).t, tb = elNear(b, e).t;
+  const th = e.a0 + e.sw * (ta + tb) / 2;
+  return arcEl(a, b, e.c, e.convex, [Math.cos(th), Math.sin(th)]);
+}
+
+/** an arc a -> b about c (sweep < 180 deg), convex (end arcs are) */
+function endArc(a, b, c) {
+  return arcEl(a, b, c, true, v2.unit(v2.add(v2.unit(v2.sub(a, c)), v2.unit(v2.sub(b, c)))));
 }
 
 /** the elements replacing P between one slot's two fillet contacts on
@@ -789,6 +809,91 @@ function rightHalf(els, runs) {
   return out;
 }
 
+/** unit tangent of e at parameter t, in its direction of travel */
+function elTan(e, t) {
+  if (e.type === "line") return v2.unit(v2.sub(e.b, e.a));
+  const th = e.a0 + e.sw * t, s = Math.sign(e.sw);
+  return [-s * Math.sin(th), s * Math.cos(th)];
+}
+
+/** the arc from p leaving along unit tangent t, through q (a line when
+ *  it is straight); CCW chain: centre on the left = convex */
+function tanArc(p, t, q) {
+  const n = [-t[1], t[0]], w = v2.sub(p, q), nw = n[0] * w[0] + n[1] * w[1];
+  const s = Math.abs(nw) < 1e-12 ? Infinity : -(w[0] * w[0] + w[1] * w[1]) / (2 * nw);
+  if (!(Math.abs(s) < 1e5)) return lineEl(p, q);
+  const c = v2.add(p, v2.mul(n, s));
+  return arcEl(p, q, c, s > 0, v2.unit(v2.add(v2.unit(v2.sub(p, c)), v2.unit(v2.sub(q, c)))));
+}
+
+/** G1 everywhere (2026-10-23): the line/arc fit and the slot fillets
+ *  meet at kinks of up to ~5 deg. A round pocket's walls are extruded from
+ *  this outline, and Onshape has to split a wall that isn't smooth (the
+ *  owner's v6 tear sat on a 2.35 deg kink). At every kinked joint both
+ *  elements are trimmed back BRIDGE mm and joined by a biarc (two tangent
+ *  arcs, equal tangent lengths): lines + arcs still, so the flare offsets
+ *  work; the outline moves ~BRIDGE * kink / 4 (< 0.01 mm). */
+const BRIDGE = 0.5; // mm
+const BRIDGE_IN = 0.005; // mm: the most a convex corner's bridge cuts in
+const CONCAVE_R = 2.0; // mm: smallest concave bridge (the rim flare is 1 mm)
+function g1Chain(right) {
+  const len = (e) => e.type === "line" ? v2.len(v2.sub(e.b, e.a)) : Math.abs(e.sw) * e.r;
+  const out = [right[0]];
+  const turn = (a, b) => { const t0 = elTan(a, 1), t2 = elTan(b, 0); return t0[0] * t2[1] - t0[1] * t2[0]; };
+  for (let i = 1; i < right.length; i++) {
+    const p = out[out.length - 1];
+    let q = right[i];
+    // a concave corner the fit split into two kinks with a short element
+    // between: bridge straight across that element (the bridge lies
+    // outside the outline there, so the pocket only grows)
+    while (turn(p, q) < 0 && i + 1 < right.length && turn(q, right[i + 1]) <= 0 &&
+      len(q) < 1.0) {
+      q = right[++i];
+    }
+    const t0 = elTan(p, 1), t2 = elTan(q, 0);
+    const kink = Math.acos(Math.max(-1, Math.min(1, t0[0] * t2[0] + t0[1] * t2[1])));
+    if (kink < 0.01 * Math.PI / 180) {
+      out.push(q);
+      continue;
+    }
+    // a convex corner (left turn, CCW) is bridged INSIDE it, towards the
+    // tool: trim only so far that it moves <= BRIDGE_IN; a concave one
+    // only ever makes the pocket bigger
+    const convex = t0[0] * t2[1] - t0[1] * t2[0] > 0;
+    const dMax = Math.min(0.3 * len(p), 0.3 * len(q));
+    // the rim flare is offset OUTWARD from this outline: a concave arc
+    // tighter than the flare turns inside out (a real corner, e.g. a
+    // ferrule step, bridged at 0.5 mm gave r 0.53 and an invalid bin), so
+    // concave bridges grow until r >= CONCAVE_R
+    let d = Math.min(convex ? (4 * BRIDGE_IN) / kink : BRIDGE, BRIDGE, dMax);
+    let br = biarc(p, q, d);
+    for (let it = 0; !convex && br.rMin < CONCAVE_R && d < dMax && it < 8; it++) {
+      d = Math.min(dMax, d * (CONCAVE_R / br.rMin) * 1.02);
+      br = biarc(p, q, d);
+    }
+    out[out.length - 1] = br.p;
+    out.push(...br.mid, br.q);
+  }
+  return out;
+}
+
+/** p's end and q's start trimmed back d mm, joined by a biarc:
+ *  Q0 = P0 + k u0, Q1 = P2 - k u2, |Q1 - Q0| = 2k, the joint J at the
+ *  middle of Q0-Q1 (tangent there along Q1 - Q0) */
+function biarc(p, q, d) {
+  const len = (e) => e.type === "line" ? v2.len(v2.sub(e.b, e.a)) : Math.abs(e.sw) * e.r;
+  const P0 = elAt(p, 1 - d / len(p)), P2 = elAt(q, d / len(q));
+  const u0 = elTan(p, 1 - d / len(p)), u2 = elTan(q, d / len(q));
+  const v = v2.sub(P2, P0), ts = v2.add(u0, u2);
+  const a = ts[0] * ts[0] + ts[1] * ts[1] - 4, b = v[0] * ts[0] + v[1] * ts[1], c = v[0] * v[0] + v[1] * v[1];
+  const k = Math.abs(a) < 1e-12 ? c / (2 * b) : (b - Math.sqrt(b * b - a * c)) / a;
+  const Q0 = v2.add(P0, v2.mul(u0, k)), Q1 = v2.sub(P2, v2.mul(u2, k));
+  const J = v2.mul(v2.add(Q0, Q1), 0.5);
+  const mid = [tanArc(P0, u0, J), tanArc(J, v2.unit(v2.sub(Q1, Q0)), P2)];
+  const rMin = Math.min(...mid.map((e) => (e.type === "arc" ? e.r : Infinity)));
+  return { p: elTo(p, p.a, P0), mid, q: elTo(q, P2, q.b), rMin };
+}
+
 /** The plan of a round pocket above the axis. `round` = profilestage's
  *  {mer, scoops, scoopR, blend}; `flare` = the rim flare size. Returns
  *  { chain: U (CCW, closed), slots: [{y, hs, mode}] } where mode is
@@ -834,8 +939,9 @@ export function roundPlan(round, flare = 0) {
       (runs[j - 1].top.i > r.bot.i ||
        (runs[j - 1].top.i === r.bot.i && runs[j - 1].top.t >= r.bot.t)));
     let chain = null;
+    let right = null;
     if (clash < 0) {
-      const right = rightHalf(q, runs);
+      right = g1Chain(rightHalf(q, runs));
       chain = [...right, ...mirrorChain(right)];
       if (!chainSimple(chain)) clash = 0;
       else {
@@ -843,7 +949,13 @@ export function roundPlan(round, flare = 0) {
         if (Ppoly.some((v) => polyDist(v, poly).d > 0.01)) clash = 0;
       }
     }
-    if (clash < 0) return { chain, slots, rb };
+    if (clash < 0) {
+      // a slot that can't widen the plan is left out of the pocket and
+      // reported (owner, 2026-10-23: skip it, with a notice)
+      const skipped = slots.filter((s) => s.mode !== "plan").map((s) => ({
+        y: s.y, why: s.mode === "inside" ? "inside" : "nofillet" }));
+      return { chain, right, slots, rb, skipped };
+    }
     const bad = slots.filter((s) => s.mode === "plan")[clash];
     bad.mode = "full";
   }
@@ -934,51 +1046,21 @@ function roundEntryCutter(oc, chain, size, H, style, log) {
   return s;
 }
 
-/** a filleted slot's band of U: the right run bottom to top, a chord
- *  across, the mirrored run top to bottom, a chord back (CCW) */
-function slotBand(run) {
-  const right = run.els, left = mirrorChain(right);
-  return [...right, lineEl(run.top.T, v2.mx(run.top.T)), ...left,
-    lineEl(v2.mx(run.bot.T), run.bot.T)];
-}
-
-/** The round-tool pocket as cutters: the half-revolved cradle fused with
- *  the plan prism above the axis (axisZ up to `top`), and per finger slot
- *  the plain stadium right across under the tool from SCOOP_LIFT over the
- *  floor up to the axis ("full" slots: up to `top`, the old way). `plan`
- *  = roundPlan(). */
-const SCOOP_LIFT = 0.5; // mm: a round tool's slots stop this far above the floor
+/** The round-tool pocket as cutters: ONE solid (roundsurf.js) — the one
+ *  surface below the axis, walls from the axis up to `top`, finger slots
+ *  part of the surface. `plan` = roundPlan(). A slot that can't widen the
+ *  plan is left out (plan.skipped; the app shows a notice). */
 export function roundCutters(oc, round, floor, top, plan, log = () => {}) {
-  const { mer, axisZ, a } = round;
-  // Axis flush: the axis IS the rim — no walls, so no plan prism (its
-  // bottom would lie in the bin's top face); the slots run up through
-  // the rim and the flare alone rounds their corners there
-  const walls = a > 0.5;
-  const out = [walls
-    ? fuse(oc, cradle(oc, mer, axisZ),
-      prism(oc, faceFromWire(oc, chainWire(oc, plan.chain, 0, axisZ)), top - axisZ))
-    : cradle(oc, mer, axisZ)];
-  // SCOOP_LIFT: at exactly the floor a slot's bottom only touched the
-  // cradle's lowest line — a valid solid whose slivers crashed the mesher
-  const z0 = floor + SCOOP_LIFT;
   for (const s of plan.slots) {
-    const zTop = s.mode === "full" || !walls ? top : axisZ;
-    if (zTop - z0 <= 0.1) continue;
-    // a filleted slot: the plan outline U across the slot's band (its
-    // fillet runs, closed by straight chords between the two sides'
-    // contacts) straight down to the slot floor, so the fillet walls run
-    // from the rim to the floor. A plain stadium below them left a
-    // pointed ledge under each fillet at the axis.
-    out.push(s.mode === "plan"
-      ? prism(oc, faceFromWire(oc, chainWire(oc, slotBand(s.run), 0, z0)), zTop - z0)
-      : scoopSlot(oc, s.hs, s.y, round.scoopR, z0, zTop - z0));
     if (s.mode === "plan") {
       log(`round tool: finger slot at y ${s.y.toFixed(1)}, ${plan.rb.toFixed(1)} mm fillet at the walls`);
-    } else if (s.mode === "full") {
-      log(`round tool: finger slot at y ${s.y.toFixed(1)}: no fillet (no clean junction with the walls)`);
     }
   }
-  return out;
+  for (const k of plan.skipped) {
+    log(`round tool: finger slot at y ${k.y.toFixed(1)} skipped (${k.why === "inside"
+      ? "inside the tool's outline" : "no clean junction with the walls"})`);
+  }
+  return [roundPocket(oc, plan, round, top)];
 }
 
 /** The negative body: the pocket cutout as its own solid — the same
@@ -990,18 +1072,8 @@ export function pocketBody(oc, segs, periodic, floor, H, round = null) {
     return prism(oc, faceFromWire(oc, profileWire(oc, segs, periodic, floor)),
       H - floor);
   }
-  // round tool: the cradle (+ plan prism, slots) fused, cut off at the rim
-  let s = null;
-  for (const c of roundCutters(oc, round, floor, H + 1, roundPlan(round))) {
-    s = s ? fuse(oc, s, c) : c;
-  }
-  const box = new oc.BRepPrimAPI_MakeBox_4(new oc.gp_Pnt_3(-1e4, -1e4, floor - 1),
-    new oc.gp_Pnt_3(1e4, 1e4, H)).Shape();
-  const op = new oc.BRepAlgoAPI_Common_3(s, box, new oc.Message_ProgressRange_1());
-  op.Build(new oc.Message_ProgressRange_1());
-  const body = op.Shape();
-  op.delete();
-  return body;
+  // round tool: the same one-surface pocket, its cap at the rim
+  return roundPocket(oc, roundPlan(round), round, H);
 }
 
 /** Puzzle-piece body outline at height z: the kept cells' loop
@@ -1132,7 +1204,11 @@ export function buildBin(oc, segs, periodic, nx, ny, nz, thickness, {
   shape = cutAll(oc, shape, cutters);
   if (!isValid(oc, shape)) throw new Error("bin solid is not valid");
   log(`bin solid valid, ${cutters.length} cutters applied`);
-  return { shape, depth, H };
+  // user-facing: finger scoops the round pocket had to leave out
+  const notices = (plan?.skipped ?? []).map((k) => k.why === "inside"
+    ? "A finger scoop sits inside the tool's outline, so it can't make room for a finger. It was left out: move it out past the tool's edge, or make it bigger."
+    : "A finger scoop couldn't be blended into the pocket walls, so it was left out. Try moving it along the tool or changing its size.");
+  return { shape, depth, H, notices: [...new Set(notices)] };
 }
 
 /** solid.tessellate port: preview mesh { positions, indices }. */

@@ -136,6 +136,7 @@ const openErr = document.getElementById("open-error");
 const profileErr = document.getElementById("profile-error");
 const exportErr = document.getElementById("export-error");
 const buildErr = document.getElementById("build-error");
+const scoopNotice = document.getElementById("scoop-notice");
 function showError(el, msg) {
   el.textContent = msg;
   el.hidden = false;
@@ -1967,6 +1968,7 @@ async function runBuild() {
   binStale = false;
   updateStale();
   clearError(buildErr);
+  clearError(scoopNotice);
   busyStatus(binStatus, "building bin solid…");
   try {
     // the tool contour rides into the STEP's embedded design so an
@@ -1991,7 +1993,13 @@ async function runBuild() {
         foot_clearance: +optFoot.value,
         magnets: currentMagnets() });
     window.__bin = { ok: r.ok, depth: r.depth, H: r.H, bbox: r.bbox,
-      logs: r.logs, ms: r.ms };
+      logs: r.logs, ms: r.ms, notices: r.notices || [] };
+    // a finger scoop the round pocket had to leave out: say so under the
+    // scoop controls, where it is fixed (no scroll: the 3D view is the news)
+    if (r.notices && r.notices.length) {
+      scoopNotice.textContent = r.notices.join(" ");
+      scoopNotice.hidden = false;
+    }
     // the rev cut is in the model now; while placing, the marker stays
     if (window.__profile === p) revPending = false;
     showMesh(r.mesh.positions, r.mesh.indices, r.bbox.dims);

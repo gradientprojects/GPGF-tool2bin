@@ -48,7 +48,7 @@ async function build(profile, params) {
         chamfer: +params.magnets.chamfer }
     : null;
   const edge = params.edge || {};
-  let { shape, depth, H } = buildBin(oc, profile.segs, profile.periodic,
+  let { shape, depth, H, notices } = buildBin(oc, profile.segs, profile.periodic,
     profile.layout.nx, profile.layout.ny, profile.layout.nz,
     profile.layout.depth, {
       magnets, edgeStyle: edge.style || null, edgeSize: +(edge.size || 0),
@@ -82,7 +82,7 @@ async function build(profile, params) {
   const mesh = tessellate(oc, shape);
   const bb = bbox(oc, shape);
   return {
-    ok: true, depth, H, bbox: bb, logs,
+    ok: true, depth, H, bbox: bb, logs, notices: notices || [],
     mesh: {
       positions: Float32Array.from(mesh.positions),
       indices: Uint32Array.from(mesh.indices),
